@@ -36,6 +36,10 @@ ECHO_BOOST = ",ms=20,db=-20"
 # most 100 ms per sound, volume cap 60%, no pets or sleeping people in the room. So the handshake goes
 # louder (-20 dB) and wider (8-15 kHz: both phones hear it; twice the bandwidth = twice as sharp).
 HANDSHAKE_A, HANDSHAKE_B = "chirp,f0=8000,f1=15000,ms=100,db=-20", "chirp,f0=15000,f1=8000,ms=100,db=-20"
+# Founder 2026-10-12: "use every trick; heard and unheard pitches are fine" -> each phone's whole good range
+WIDE = {"8T": "chirp,f0=2000,f1=20000", "POCO": "chirp,f0=2000,f1=15000"}
+
+
 def ping_of(name):
     return PINGS.get(name, PING)
 
@@ -352,6 +356,41 @@ def task3(args):
                 s.say(f"- something changed at {d*100:.0f} cm (leftover {ratio:.0f}x the still-room noise) (MEASURED)")
         else:
             s.say("- no clear change found (MEASURED). This is 'unknown', not 'clear'.")
+    s.save()
+
+
+def echo_list(profs, max_m=4.0, min_sep_m=0.05, top=14):
+    """Every echo bump above 6x the ping-to-ping noise, beyond the blind zone: [(m, dB vs direct, x noise)]."""
+    env = np.abs(profs.mean(axis=0))
+    noise = echo.noise_level(profs) / np.sqrt(len(profs))
+    r = echo.range_axis(len(env), RATE)
+    b = echo.blind_end(env, noise, RATE, 6, 0.15)
+    pk = [i for i in range(max(b, 1), len(env) - 1)
+          if env[i] >= env[i - 1] and env[i] > env[i + 1] and env[i] > 6 * noise[i] and r[i] <= max_m]
+    pk.sort(key=lambda i: -env[i])
+    keep = []
+    for i in pk:
+        if all(abs(r[i] - r[j]) > min_sep_m for j in keep):
+            keep.append(i)
+    keep = sorted(keep[:top])
+    return r[b], [(float(r[i]), float(20 * np.log10(env[i] / env[0])), float(env[i] / noise[i])) for i in keep]
+
+
+def task_look(args):
+    """Narrow vs wide pitch range, same place, same pings: which separates the room's objects better?"""
+    s = Session(args.root, f"look_{args.phone}")
+    serial = phone.serial_of(args.phone)
+    vol = find_level(s, args.root, args.phone, serial)
+    s.say(f"# The Batsight - room look, narrow vs wide pitch range - {args.phone}\n")
+    for name, base in (("narrow", ping_of(args.phone)), ("wide", WIDE[args.phone])):
+        spec = base + ECHO_BOOST + ",count=100,every=100"
+        r = run(s, serial, f"look_{name}", spec=spec, vol=vol, pre=500, post=300)
+        profs, _, _ = echo.profiles(analysis.mono(r.rec), signals.reference(spec), signals.ping_starts(spec), RATE, max_m=4.0)
+        np.save(s.work / f"look_{name}_profiles.npy", profs)
+        blind, lst = echo_list(profs)
+        s.say(f"## {name}: `{spec}` ({len(profs)} pings)")
+        s.say(f"- blind zone: up to {blind*100:.0f} cm (MEASURED)")
+        s.say("- echoes: " + ", ".join(f"{m*100:.0f} cm ({db:.0f} dB, {x:.0f}x)" for m, db, x in lst) + " (MEASURED)")
     s.save()
 
 
@@ -730,7 +769,7 @@ def main(argv=None):
         args.other = "8T" if args.phone == "POCO" else "POCO"
     tasks = {"task1": task1, "task2": task2, "task3": task3, "task5a": task3, "task5b": task3, "task4a": task4a,
              "task4c": task4c, "task5c": task5c, "task5d": task5d, "task5e": task5e, "task5f": task5f,
-             "task5g": task5g, "task5h": task5h}
+             "task5g": task5g, "task5h": task5h, "look": task_look}
     if args.task == "facts":
         s = Session(args.root, f"facts_{args.phone}")
         print(phone.facts(phone.serial_of(args.phone), s.rid("facts"), s.src))
