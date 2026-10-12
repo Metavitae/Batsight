@@ -286,3 +286,11 @@ def test_sound_file_safety(tmp_path):
     loud = tmp_path / "loud.wav"; wavio.write(loud, x * 10, RATE)
     with pytest.raises(SystemExit, match="safety rule"):
         phone.check_safe_wav(loud)
+
+
+def test_scanner_is_quiet_long_and_safe(tmp_path):
+    from lab import phone, sounds
+    st, ref = sounds.scanner(cycles=2)
+    assert 20 * np.log10(np.abs(st).max()) <= -29.9
+    f = tmp_path / "scan.wav"; wavio.write(f, st, RATE); phone.check_safe_wav(f)   # long but quiet: allowed
+    assert sounds.sharpness(sounds.scanner(shape="triangle")[1])["ghost_db"] < -25

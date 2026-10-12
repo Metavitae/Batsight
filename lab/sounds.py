@@ -181,3 +181,30 @@ def train(names, every_ms, count, rate=RATE, lead_ms=0):
         x[k:k + len(snd[nm])] += snd[nm]
         starts[nm].append(k)
     return np.stack([x, x], axis=1), starts, snd
+
+
+def scanner(cycles=5, cycle_s=1.2, f_lo=2000.0, f_hi=8000.0, shape="cosine", peak_db=-30.0, rate=RATE):
+    """'Scanner' (founder's idea, in the spirit of a TV car's sweeping red scanner light; original,
+    not a copy of any show's sound): a CONTINUOUS glide up and down in pitch ('wooo... wooo'), swinging
+    from the left speaker to the right and back in step. Long sounds are only allowed at -30 dBFS or
+    quieter, so it plays quietly; it makes up for that by lasting long (echo strength grows with
+    total sound energy). The glide itself is the sonar signal (like gliding-tone radar).
+    shape: 'cosine' (smooth, slows at the turns) or 'triangle' (steady glide, sharp turns).
+    Returns (stereo [frames, 2], one half-cycle up-glide as the echo template)."""
+    T = cycle_s
+    t = np.arange(int(cycles * T * rate)) / rate
+    ph = (t % T) / T
+    if shape == "cosine":
+        f = f_lo + (f_hi - f_lo) * (1 - np.cos(2 * np.pi * ph)) / 2
+    else:
+        f = f_lo + (f_hi - f_lo) * (1 - np.abs(2 * ph - 1))
+    x = np.sin(2 * np.pi * np.cumsum(f) / rate)
+    pan = (1 - np.cos(2 * np.pi * ph)) / 2           # 0 = left, 1 = right, in step with the pitch
+    L, R = x * np.sqrt(1 - pan), x * np.sqrt(pan)
+    fade = np.ones(len(x)); n = int(0.2 * rate)
+    fade[:n] = np.linspace(0, 1, n); fade[-n:] = np.linspace(1, 0, n)
+    st = np.stack([L * fade, R * fade], axis=1)
+    st = st / (np.abs(st).max() + 1e-20) * 10 ** (peak_db / 20)
+    half = int(T / 2 * rate)
+    k = int(T * rate)                                  # the second cycle's up-glide (past the fade-in)
+    return st, x[k:k + half] * 10 ** (peak_db / 20)
