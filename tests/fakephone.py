@@ -30,6 +30,8 @@ class FakeWorld:
         monkeypatch.setattr(phone, "trigger", lambda serial, run_id, what: None)
 
     def start(self, serial, mode, run_id, **opts):
+        if opts.get("spec"):
+            phone.check_safe(opts["spec"])      # every task's sounds must pass the safety rule
         self.pending[run_id] = (serial, mode, opts)
 
     @staticmethod

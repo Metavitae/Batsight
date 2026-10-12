@@ -80,7 +80,27 @@ def grant(serial):
     adb(serial, "shell", "pm", "grant", PKG, "android.permission.RECORD_AUDIO", check=False)
 
 
+# Founder's rule 2026-10-12: "audible is fine as long as it isn't hurtful".
+MAX_DB = -20.0        # no sound louder than this (dBFS)
+MAX_MS = 100.0        # no sound longer than this ...
+LONG_MAX_DB = -30.0   # ... unless it is at most this loud (e.g. Task 1's slow pitch sweep)
+
+
+def check_safe(spec):
+    """Refuse a sound that breaks the founder's 'never hurtful' rule. Checked on EVERY start."""
+    from . import signals
+    for kind, v in signals.parse(spec):
+        if kind == "silence":
+            continue
+        db = float(v.get("db", -30)); ms = float(v.get("ms", 0.3 if kind == "click" else 10))
+        if db > MAX_DB or (ms > MAX_MS and db > LONG_MAX_DB):
+            raise SystemExit(f"refused by the safety rule: '{kind}' {db} dB for {ms} ms "
+                             f"(max {MAX_DB} dB; longer than {MAX_MS} ms only at {LONG_MAX_DB} dB or quieter)")
+
+
 def start(serial, mode, run_id, **extras):
+    if extras.get("spec"):
+        check_safe(extras["spec"])
     parts = ["am", "start", "-S", "-n", f"{PKG}/.MainActivity", "--es", "mode", mode, "--es", "id", run_id]
     for k, v in extras.items():
         if v is None:

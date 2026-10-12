@@ -238,3 +238,12 @@ def test_pair_distance_rejects_stray_sound():
     put(recA2, B, 60000, 0.3)                                         # a stray "B" sound, wrong time
     d2, info = pair.distance(recA2, recB, A, B, RATE, gap_s=0.4)
     assert d2 is None and "gaps disagree" in info["not_heard"][0]
+
+
+def test_safety_rule_refuses_loud_or_long_sounds():
+    from lab import phone
+    phone.check_safe("chirp,f0=8000,f1=15000,ms=100,db=-20")            # the handshake: allowed
+    phone.check_safe("sweep,f0=12000,f1=23900,ms=8000,db=-30")          # Task 1's slow sweep: allowed
+    for bad in ("chirp,f0=8000,f1=15000,ms=100,db=-10", "tone,f=1000,ms=500,db=-20"):
+        with pytest.raises(SystemExit, match="safety rule"):
+            phone.check_safe(bad)

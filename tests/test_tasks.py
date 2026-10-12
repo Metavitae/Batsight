@@ -54,7 +54,7 @@ def test_task4c_link_check_stops_deaf_pair(world, tmp_path):
 
 def test_task4c_link_check_raises_quiet_sender(world, tmp_path):
     # a weak link that gets clear once the senders are turned up (fake loudness scales with volume)
-    world.pair_gain = 0.005
+    world.pair_gain = 0.0015
     rep = go(tmp_path, "task4c")
     assert "Link check passed" in rep and "Link check at volume steps POCO 3" in rep
     assert "Link check at volume steps POCO 6" in rep or "Link check at volume steps POCO 5" in rep or "Link check at volume steps POCO 4" in rep

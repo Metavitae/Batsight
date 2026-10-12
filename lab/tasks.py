@@ -32,15 +32,19 @@ PINGS = {"POCO": "chirp,f0=17000,f1=19000,ms=10,db=-30"}
 
 
 ECHO_BOOST = ",ms=20,db=-20"
-
-
+# Founder's rule 2026-10-12: "audible is fine as long as it isn't hurtful" -> at most -20 dBFS, at
+# most 100 ms per sound, volume cap 60%, no pets or sleeping people in the room. So the handshake goes
+# louder (-20 dB) and wider (8-15 kHz: both phones hear it; twice the bandwidth = twice as sharp).
+HANDSHAKE_A, HANDSHAKE_B = "chirp,f0=8000,f1=15000,ms=100,db=-20", "chirp,f0=15000,f1=8000,ms=100,db=-20"
 def ping_of(name):
     return PINGS.get(name, PING)
 
 
 def ping_ms(name):
     return float(signals.parse(ping_of(name))[0][1]["ms"])
-LEVEL_CAP = 0.6          # never set the phone's media volume above 60 % of its maximum
+LEVEL_CAP = 0.6          # comfort line: the volume ladder normally stops at 60 % of the maximum ...
+HARD_CAP = 1.0           # ... but may go on to 100 % when calibration needs it (founder 2026-10-12:
+                         # "it's an emergency, comfort goes out the window"); sounds stay <= -20 dB, short
 
 
 class Session:
@@ -112,17 +116,19 @@ def find_level(s, root, name, serial):
     ref = signals.reference(spec)
     r = run(s, serial, "level", spec=spec, vol=1)
     vmax = r.meta["volume_max"]
-    for v in range(1, int(vmax * LEVEL_CAP) + 1):
+    for v in range(1, int(vmax * HARD_CAP) + 1):
         if v > 1:
             r = run(s, serial, "level", spec=spec, vol=v)
         snr = direct_snr(r, ref)
         s.say(f"  volume step {v}/{vmax}: ping {snr:.1f} dB above the quiet parts")
         if snr >= 20:
+            if v > int(vmax * LEVEL_CAP):
+                s.say(f"  NOTE: above the 60% comfort line (founder's emergency rule: needed by this phone)")
             save_level(root, name, v)
             s.say(f"- Volume for {name}: step {v} of {vmax} (MEASURED: lowest step that gives a clear ping)")
             return v
-    v = int(vmax * LEVEL_CAP)
-    s.say(f"- Volume for {name}: capped at step {v} of {vmax}; ping still weak (MEASURED). Results below may be noisy.")
+    v = int(vmax * HARD_CAP)
+    s.say(f"- Volume for {name}: at the maximum, step {v} of {vmax}; ping still weak (MEASURED). Results below may be noisy.")
     save_level(root, name, v)
     return v
 
@@ -432,13 +438,14 @@ def link_check(s, a, b, A, B, specA, specB, va, vb):
     caps = {}
     for ser, v in ((a, va), (b, vb)):
         mx = phone.max_volume(ser)
-        caps[ser] = int(mx * LEVEL_CAP) if mx else v
+        caps[ser] = int(mx * HARD_CAP) if mx else v
     while True:
         d, info = pair_round(s, a, b, specA, specB, va, vb)
         q = info["quality"]
         s.say(f"- Link check at volume steps {A} {va}, {B} {vb}: {link_words(info, A, B)} (MEASURED; needs {pair.HEARD:.0f}x)")
         if d is not None:
-            s.say("- Link check passed.")
+            s.say("- Link check passed." + (" NOTE: a phone is above the 60% comfort line (founder's emergency rule)."
+                                             if any(v > int((phone.max_volume(x) or 99) * LEVEL_CAP) for x, v in ((a, va), (b, vb))) else ""))
             return va, vb
         up = False
         if q["B_hears_A"] < pair.HEARD and va < caps[a]:
@@ -446,7 +453,7 @@ def link_check(s, a, b, A, B, specA, specB, va, vb):
         if q["A_hears_B"] < pair.HEARD and vb < caps[b]:
             vb += 1; up = True
         if not up:
-            s.say("- LINK CHECK FAILED at the volume cap: the phones don't clearly hear each other. "
+            s.say("- LINK CHECK FAILED at full volume: the phones don't clearly hear each other. "
                   "Test stopped; no distances reported.")
             s.save()
             raise SystemExit("link check failed: " + link_words(info, A, B))
@@ -462,7 +469,7 @@ def task4c(args):
     s.say("Measure the distance between the two phones with a tape first and write it here: ____ cm")
     # 12-15 kHz: the POCO's mic stops near 15.5 kHz (MEASURED 2026-10-12), so 16-20 kHz can't link
     # the two phones. Up-sweep vs down-sweep tells the two sounds apart. 100 ms (founder 2026-10-12): 20 ms was too weak for the POCO to hear the 8T.
-    specA, specB = "chirp,f0=12000,f1=15000,ms=100,db=-30", "chirp,f0=15000,f1=12000,ms=100,db=-30"
+    specA, specB = HANDSHAKE_A, HANDSHAKE_B
     va, vb = link_check(s, a, b, args.phone, args.other, specA, specB, va, vb)
     results = []
     for rnd in range(5):
@@ -666,7 +673,7 @@ def task5h(args):
     va, vb = load_levels(args.root).get(args.phone, 3), load_levels(args.root).get(args.other, 3)
     # 12-15 kHz: the POCO's mic stops near 15.5 kHz (MEASURED 2026-10-12), so 16-20 kHz can't link
     # the two phones. Up-sweep vs down-sweep tells the two sounds apart. 100 ms (founder 2026-10-12): 20 ms was too weak for the POCO to hear the 8T.
-    specA, specB = "chirp,f0=12000,f1=15000,ms=100,db=-30", "chirp,f0=15000,f1=12000,ms=100,db=-30"
+    specA, specB = HANDSHAKE_A, HANDSHAKE_B
     va, vb = link_check(s, a, b, args.phone, args.other, specA, specB, va, vb)
     est, prev = [], None
     for rnd in range(12):
@@ -689,7 +696,7 @@ def task5h(args):
     s.save()
 
 
-CHIME = "tone,f=880,ms=250,db=-15+tone,f=660,ms=400,at=320,db=-15"
+CHIME = "tone,f=880,ms=100,db=-20+tone,f=660,ms=100,at=160,db=-20+tone,f=880,ms=100,at=320,db=-20"
 
 
 def chime():
@@ -700,7 +707,8 @@ def chime():
         ser = d.get("8T") or next(iter(d.values()), None)
         if ser:
             rid = "chime_" + dt.datetime.now().strftime("%H%M%S")
-            phone.start(ser, "play-record", rid, spec=CHIME, vol=12, pre=100, post=100)
+            mx = phone.max_volume(ser) or 30
+            phone.start(ser, "play-record", rid, spec=CHIME, vol=int(mx * LEVEL_CAP), pre=100, post=100)
             phone.wait_for(ser, f"{rid}.json", 30)
             phone.adb(ser, "shell", f"rm -f {phone.REMOTE}/{rid}*", check=False)
     except Exception:
