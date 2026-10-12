@@ -199,3 +199,22 @@ def test_solver_finds_wall_and_never_greens_silence():
     img0 = solver.solve(empty, angles, RATE, grid)
     st0, _ = solver.classify(img0, empty, angles, RATE, grid, noise=0.002 * 3)
     assert (st0 != echo.CLEAR).all()
+
+
+def test_averaging_gain_counts_only_ping_to_ping_noise():
+    # a fixed room echo plus random noise: averaging N pings should gain ~10*log10(N) dB,
+    # and the room's own echoes must NOT count as noise
+    rng = np.random.default_rng(1)
+    room = np.zeros(400, complex)
+    room[50], room[200], room[300] = 1.0, 0.8, 0.6
+    profs = room[None, :] + 0.3 * (rng.normal(size=(100, 400)) + 1j * rng.normal(size=(100, 400)))
+    g = echo.averaging_gain(profs, 0, 400)
+    assert g[50] - g[1] == pytest.approx(17.0, abs=2.0)
+
+
+def test_decay_time_ignores_noise_floor():
+    rate = 48000
+    t = np.arange(int(0.6 * rate)) / rate
+    rng = np.random.default_rng(2)
+    env = np.exp(-6.9 * t / 0.4) * rng.normal(size=len(t)) + 10 ** (-40 / 20) * rng.normal(size=len(t))
+    assert echo.decay_time(env, rate) == pytest.approx(0.4, abs=0.08)

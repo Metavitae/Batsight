@@ -477,20 +477,33 @@ def task5c(args):
     timings = {"together": (",count=10,every=200", ",count=10,every=200"),
                "canon": (",count=10,every=200", ",at=100,count=10,every=200"),
                "off-beat": (",count=10,gaps=170;230;190;210", ",at=60,count=10,gaps=230;170;210;190")}
+    # Separation is judged against each sweep played ALONE (real phones: with both starting at the
+    # same instant, comparing positions inside one recording measured a spot against itself).
+    # Number = how much the OTHER sweep raises the floor where this sweep's echoes are read
+    # (0.3-3 m after each of its pings), versus that sweep alone. Lower = better separated.
+    def floors(spec, part, rec, played):
+        x = analysis.mono(rec)
+        e = np.abs(dsp.matched(x, signals.reference(spec, RATE, part)))
+        col = played[:, 0] if part == 0 else played[:, 1]
+        off = analysis.direct_delay(rec, played)
+        if off is None:
+            return None
+        lo, hi = int(2 * 0.3 / C * RATE), int(2 * 3.0 / C * RATE)
+        st = signals.ping_starts(spec, RATE, part)
+        return float(np.sqrt(np.mean(np.concatenate([e[int(off) + k + lo:int(off) + k + hi] for k in st]) ** 2)))
+    solo = {}
+    for nm, sp, part in (("up", up + ",count=10,every=200", 0), ("down", down + ",count=10,every=200", 0)):
+        r = run(s, serial, f"updown_solo_{nm}", spec=sp, vol=vol)
+        solo[nm] = floors(sp, part, r.rec, r.played)
     for name, (tu, td) in timings.items():
         spec = up + tu + "+" + down + td
         r = run(s, serial, f"updown_{name.replace('-', '')}", spec=spec, vol=vol)
-        x = analysis.mono(r.rec)
-        eu = np.abs(dsp.matched(x, signals.reference(spec, RATE, 0)))
-        ed = np.abs(dsp.matched(x, signals.reference(spec, RATE, 1)))
-        off = int(analysis.direct_delay(r.rec, r.played))
-        su, sd = signals.ping_starts(spec, RATE, 0), signals.ping_starts(spec, RATE, 1)
-        own_u = np.mean([eu[off + k - 5:off + k + 6].max() for k in su])
-        leak_u = np.mean([eu[off + k - 5:off + k + 6].max() for k in sd])
-        own_d = np.mean([ed[off + k - 5:off + k + 6].max() for k in sd])
-        leak_d = np.mean([ed[off + k - 5:off + k + 6].max() for k in su])
-        s.say(f"- {name}: up-filter sees the down sweep {dsp.db(leak_u/own_u):.1f} dB below its own; "
-              f"down-filter sees the up sweep {dsp.db(leak_d/own_d):.1f} dB below its own (MEASURED; lower = better separated)")
+        fu, fd = floors(spec, 0, r.rec, r.played), floors(spec, 1, r.rec, r.played)
+        if None in (fu, fd, solo["up"], solo["down"]):
+            s.say(f"- {name}: sweeps not found in the recording (MEASURED)")
+            continue
+        s.say(f"- {name}: the other sweep raises the up-sweep's echo floor by {dsp.db(fu / solo['up']):+.1f} dB, "
+              f"the down-sweep's by {dsp.db(fd / solo['down']):+.1f} dB (MEASURED; 0 = no harm, lower = better separated)")
     s.save()
 
 
@@ -503,9 +516,16 @@ def task5d(args):
     spec = "chirp,f0=4000,f1=20000,ms=20,db=-30,count=5,every=800"
     r = run(s, serial, "decay", spec=spec, vol=vol)
     profs, _, _ = echo.profiles(analysis.mono(r.rec), signals.reference(spec), signals.ping_starts(spec), RATE, max_m=60.0)
+    times = []
     for i, p in enumerate(profs):
         t = echo.decay_time(p, RATE, start_bin=int(0.002 * RATE))
+        times.append(t)
         s.say(f"- ping {i+1}: decay to -60 dB in {('%.2f s' % t) if t else 'not measurable'} (MEASURED)")
+    avg = np.sqrt(np.mean(np.abs(profs) ** 2, axis=0))
+    t = echo.decay_time(avg, RATE, start_bin=int(0.002 * RATE))
+    ok = [x for x in times if x]
+    s.say(f"- all {len(profs)} pings together: {('%.2f s' % t) if t else 'not measurable'}"
+          + (f"; single pings ranged {min(ok):.2f}-{max(ok):.2f} s" if ok else "") + " (MEASURED)")
     s.say("- Added reverb check: a copy with a fake 0.5 s reverb is in Art/Working; its echo peaks blur (see tests).")
     x = analysis.mono(r.rec)
     tail = np.random.default_rng(0).normal(0, 1, int(0.5 * RATE)) * 10 ** (-3 * np.arange(int(0.5 * RATE)) / RATE / 0.5)
@@ -521,17 +541,17 @@ def task5e(args):
     vol = find_level(s, args.root, args.phone, serial)
     s.say(f"# The Batsight - Task 5e - averaging while still / noticing movement - {args.phone} - '{step}'\n")
     spec = ping_of(args.phone) + (",count=100,every=60" if step == "still" else ",count=60,every=100")
-    s.say("Phone still on the table, a box or book 1 m in front." if step == "still"
+    s.say("Phone still on the table, nobody moving." if step == "still"
           else "Phone still. After about 2 seconds, walk slowly across the room 1-2 m in front of it.")
     r = run(s, serial, f"avg_{step}", spec=spec, vol=vol)
     profs, _, _ = echo.profiles(analysis.mono(r.rec), signals.reference(spec), signals.ping_starts(spec), RATE, max_m=3.0)
     rr = echo.range_axis(profs.shape[1], RATE)
     if step == "still":
-        tb = int(np.argmin(np.abs(rr - 1.0)))
-        tb = tb - 20 + int(np.argmax(np.abs(profs.mean(0))[tb - 20:tb + 20]))
-        nb = np.arange(tb + 150, min(profs.shape[1], tb + 450))
-        for n, v in echo.averaging_curve(profs, tb, nb).items():
-            s.say(f"- after {n} pings: target {v:.1f} dB above the noise (MEASURED)")
+        lo, hi = int(np.searchsorted(rr, 0.3)), int(np.searchsorted(rr, 3.0))
+        for n, v in echo.averaging_gain(profs, lo, hi).items():
+            s.say(f"- after {n} pings: strongest echo (0.3-3 m) {v:.1f} dB above the ping-to-ping noise (MEASURED)")
+        s.say("  (noise = how much two separate groups of N pings disagree; 100 pings make two groups of 50, "
+              "so 50 is the last honest step)")
     else:
         noise = echo.noise_level(profs[:15])
         flags = echo.motion_flags(profs, noise, blank=echo.blank_bins(RATE, 0.3))

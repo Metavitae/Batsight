@@ -164,6 +164,23 @@ def averaging_curve(profs, target_bin, noise_bins, counts=(1, 5, 20, 100)):
     return out
 
 
+def averaging_gain(profs, lo_bin, hi_bin, counts=(1, 5, 20, 50)):
+    """Task 5e, honest version (real phones): noise = how much two INDEPENDENT averages of N pings
+    disagree (a room's real echoes are the same in both, so they don't count as noise).
+    signal = the strongest echo of the full average in lo..hi. Returns {N: dB}. 100 pings can't be
+    split into two independent 100-averages, so the last value (N=50) is the honest maximum."""
+    full = np.abs(profs.mean(axis=0))[lo_bin:hi_bin]
+    sig = full.max()
+    out = {}
+    for n in counts:
+        if 2 * n > len(profs):
+            break
+        a, b = profs[:n].mean(axis=0), profs[n:2 * n].mean(axis=0)
+        noise = np.sqrt(np.mean(np.abs(a - b)[lo_bin:hi_bin] ** 2) / 2) + 1e-20
+        out[n] = float(20 * np.log10(sig / noise))
+    return out
+
+
 def motion_flags(profs, still_noise, z=6.0, blank=0):
     """Task 5e: does something move? Compare each ping with the previous one; a change far above
     the still-room noise means 'moving' -> restart the average instead of drawing a false picture."""
@@ -184,17 +201,29 @@ def average_with_restart(profs, flags):
     return sel.mean(axis=0), len(sel)
 
 
-def decay_time(env, rate, start_bin=0):
+def decay_time(env, rate, start_bin=0, smooth_ms=5.0):
     """Task 5d: how fast the room's sound dies away. Schroeder backward integration of the squared
     pulse-compressed response, straight-line fit from -5 dB to -25 dB, extended to -60 dB (RT60).
     Returns seconds, or None if the response is too short or too noisy."""
     e = np.abs(env[start_bin:]) ** 2
     if len(e) < 10:
         return None
+    w = max(1, int(smooth_ms / 1000 * rate))
+    es = np.convolve(e, np.ones(w) / w, "same")
+    # stop where the room's sound has sunk into the background noise (measured from the last 30%);
+    # counting that noise as room sound made real-phone answers jump from 0.2 s to 1.4 s
+    noise = np.median(es[int(0.7 * len(es)):])
+    below = np.nonzero(es[w:] < 2 * noise)[0]
+    cut = w + int(below[0]) if len(below) else len(es)
+    e = np.maximum(e[:cut] - noise, 0)
+    if len(e) < 10 or e.sum() <= 0:
+        return None
     sch = np.cumsum(e[::-1])[::-1]
     sch_db = 10 * np.log10(sch / sch[0] + 1e-30)
     i5 = np.nonzero(sch_db <= -5)[0]
     i25 = np.nonzero(sch_db <= -25)[0]
+    if len(i25) == 0:                       # quiet room sound: fit -5..-15 dB instead (T10 style)
+        i25 = np.nonzero(sch_db <= -15)[0]
     if len(i5) == 0 or len(i25) == 0 or i25[0] <= i5[0] + 2:
         return None
     k = np.arange(i5[0], i25[0])
