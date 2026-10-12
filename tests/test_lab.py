@@ -294,3 +294,13 @@ def test_scanner_is_quiet_long_and_safe(tmp_path):
     assert 20 * np.log10(np.abs(st).max()) <= -29.9
     f = tmp_path / "scan.wav"; wavio.write(f, st, RATE); phone.check_safe_wav(f)   # long but quiet: allowed
     assert sounds.sharpness(sounds.scanner(shape="triangle")[1])["ghost_db"] < -25
+
+
+def test_whompf_layer_does_not_disturb_echo_filter():
+    from lab import sounds
+    x, starts, snd = sounds.layered(whompf_db=-20.0, chirp_db=-30.0, seconds=3.0)
+    w = sounds.whompf(seconds=len(x) / RATE, peak_db=-20.0)[:len(x)]
+    def clarity(sig):
+        e = np.abs(dsp.matched(sig, snd["warp_rise"]))
+        return 20 * np.log10(np.median([e[k] for k in starts["warp_rise"][:8]]) / np.median(e))
+    assert abs(clarity(x.mean(1)) - clarity((x - w).mean(1))) < 1.0

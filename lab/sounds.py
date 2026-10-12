@@ -208,3 +208,35 @@ def scanner(cycles=5, cycle_s=1.2, f_lo=2000.0, f_hi=8000.0, shape="cosine", pea
     half = int(T / 2 * rate)
     k = int(T * rate)                                  # the second cycle's up-glide (past the fade-in)
     return st, x[k:k + half] * 10 ** (peak_db / 20)
+
+
+def whompf(seconds=6.0, cycle_s=1.0, f_lo=300.0, f_hi=1800.0, peak_db=-30.0, rate=RATE):
+    """'Whompf-whompf' character layer (founder's held question): a ~1 s back-and-forth low glide,
+    swinging left-right, with NO chirp in it. Low/mid pitches only, so the sonar's echo filters
+    (which listen above ~3 kHz) ignore it. Original sound in the spirit of a TV car's scanner.
+    A soft swell on each pass gives the 'whompf'. Phone speakers can't do deep bass, so on the phone
+    the lowest part will sound thinner than here."""
+    t = np.arange(int(seconds * rate)) / rate
+    ph = (t % cycle_s) / cycle_s
+    f = f_lo + (f_hi - f_lo) * (1 - np.cos(2 * np.pi * ph)) / 2
+    tone = np.sin(2 * np.pi * np.cumsum(f) / rate)
+    tone += 0.5 * np.sin(2 * np.pi * np.cumsum(f * 0.5) / rate)        # a lower body for the 'whompf'
+    swell = 0.35 + 0.65 * np.abs(np.sin(np.pi * ph * 2)) ** 1.5          # louder mid-pass, softer at the turns
+    pan = (1 - np.cos(2 * np.pi * ph)) / 2
+    x = tone * swell
+    st = np.stack([x * np.sqrt(1 - pan), x * np.sqrt(pan)], axis=1)
+    n = int(0.15 * rate); fade = np.ones(len(x)); fade[:n] = np.linspace(0, 1, n); fade[-n:] = np.linspace(1, 0, n)
+    st = st * fade[:, None]
+    return st / (np.abs(st).max() + 1e-20) * 10 ** (peak_db / 20)
+
+
+def layered(whompf_db=-30.0, chirp_db=-30.0, seconds=6.0, every_ms=150, rate=RATE):
+    """Founder's idea: the whompf on top, our real Warp/Hyper chirps underneath (kept above 3 kHz)."""
+    w = whompf(seconds=seconds, peak_db=whompf_db, rate=rate)
+    count = int(seconds * 1000 / every_ms) - 2
+    ch, starts, snd = train(["warp_rise", "hyperspace_v"], every_ms, count, rate)
+    ch = ch * 10 ** ((chirp_db - PEAK_DB) / 20)
+    from . import dsp
+    ch = np.stack([dsp.bandpass(ch[:, c], rate, 3000, 15000) for c in range(2)], axis=1)  # keep chirps above the whompf
+    n = min(len(w), len(ch))
+    return w[:n] + ch[:n], starts, snd
