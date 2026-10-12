@@ -46,12 +46,25 @@ def _norm(x, rate):
     return x / (np.abs(x).max() + 1e-20) * 10 ** (PEAK_DB / 20)
 
 
-def warp_rise(rate=RATE):
-    """'Warp rise': a curved upward whoosh 2 -> 15 kHz with a fainter octave-down shadow."""
-    a = _sweep(2000, 15000, 90, rate)
-    b = _sweep(1000, 7500, 90, rate)
+def warp_rise(rate=RATE, shadow=0.2):
+    """'Warp rise' (founder's pick): an upward whoosh 2 -> 15 kHz with a faint octave-down shadow.
+    STRAIGHT sweep on purpose: with a curved (log) sweep 'an octave lower' equals 'a little earlier',
+    so the shadow made a fake echo at -12 dB; straight, the false copies drop to about -35 dB."""
+    a = _sweep(2000, 15000, 90, rate, log=False)
+    b = _sweep(1000, 7500, 90, rate, log=False)
     env = np.linspace(0.6, 1.0, len(a))
-    return _norm(env * (a + 0.35 * b), rate)
+    return _norm(env * (a + shadow * b), rate)
+
+
+def warp_hyper(rate=RATE, every_ms=250, count=12):
+    """Founder's choice: warp rise and hyperspace V, alternating, one every `every_ms`."""
+    w, h = warp_rise(rate), hyperspace_v(rate)
+    n = int(every_ms / 1000 * rate)
+    x = np.zeros(n * count + len(h))
+    for i in range(count):
+        s = w if i % 2 == 0 else h
+        x[i * n:i * n + len(s)] += s
+    return x
 
 
 def blaster_fall(rate=RATE):
