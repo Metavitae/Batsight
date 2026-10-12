@@ -26,6 +26,7 @@ class FakeWorld:
         monkeypatch.setattr(phone, "start", self.start)
         monkeypatch.setattr(phone, "wait_for", self.wait_for)
         monkeypatch.setattr(phone, "pull", self.pull)
+        monkeypatch.setattr(phone, "max_volume", lambda serial: 10)
 
     def start(self, serial, mode, run_id, **opts):
         self.pending[run_id] = (serial, mode, opts)
@@ -64,7 +65,7 @@ class FakeWorld:
         for prid, popts in players:
             if prid == rid:
                 continue
-            p = signals.build(popts["spec"], RATE) * 0.3 * self.pair_gain
+            p = signals.build(popts["spec"], RATE) * 0.3 * self.pair_gain * (0.1 * popts["vol"] if popts.get("vol", -1) >= 0 else 0.5)
             k = int(popts.get("pre", 500) / 1000 * RATE + self.pair_distance / C * RATE)
             seg = p[:, 0] + p[:, 1]
             end = min(len(y), k + len(seg))

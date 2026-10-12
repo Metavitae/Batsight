@@ -50,6 +50,12 @@ def get_volume(serial):
     return int(m.group(1)) if m else None
 
 
+def max_volume(serial):
+    out = adb(serial, "shell", "cmd", "media_session", "volume", "--stream", "3", "--get", check=False)
+    m = re.search(r"range \[0\.\.(\d+)\]", out or "")
+    return int(m.group(1)) if m else None
+
+
 def set_volume(serial, step):
     """NOTE: both test phones IGNORE this (MEASURED 2026-10-12); the app restores the volume itself."""
     adb(serial, "shell", "cmd", "media_session", "volume", "--stream", "3", "--set", str(step), check=False)

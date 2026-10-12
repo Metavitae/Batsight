@@ -411,15 +411,31 @@ def pair_round(s, a, b, specA, specB, va, vb):
 
 
 def link_check(s, a, b, A, B, specA, specB, va, vb):
-    """Confirmation check before any two-phone test: one trial round must show each phone clearly
-    hearing the other. Otherwise stop, saying which direction failed."""
-    d, info = pair_round(s, a, b, specA, specB, va, vb)
-    s.say(f"- Link check: {link_words(info, A, B)} (MEASURED; needs {pair.HEARD:.0f}x)")
-    if d is None:
-        s.say("- LINK CHECK FAILED: the phones don't clearly hear each other. Test stopped; no distances reported.")
-        s.save()
-        raise SystemExit("link check failed: " + link_words(info, A, B))
-    s.say("- Link check passed.")
+    """Confirmation check before any two-phone test: each phone must clearly hear the other.
+    If one direction is weak, the SENDER of that direction goes up one volume step at a time, never
+    above LEVEL_CAP of its maximum (same safety rule as the single-phone ladder). If it still fails at
+    the cap, stop and say which direction failed. Returns the volumes to use."""
+    caps = {}
+    for ser, v in ((a, va), (b, vb)):
+        mx = phone.max_volume(ser)
+        caps[ser] = int(mx * LEVEL_CAP) if mx else v
+    while True:
+        d, info = pair_round(s, a, b, specA, specB, va, vb)
+        q = info["quality"]
+        s.say(f"- Link check at volume steps {A} {va}, {B} {vb}: {link_words(info, A, B)} (MEASURED; needs {pair.HEARD:.0f}x)")
+        if d is not None:
+            s.say("- Link check passed.")
+            return va, vb
+        up = False
+        if q["B_hears_A"] < pair.HEARD and va < caps[a]:
+            va += 1; up = True
+        if q["A_hears_B"] < pair.HEARD and vb < caps[b]:
+            vb += 1; up = True
+        if not up:
+            s.say("- LINK CHECK FAILED at the volume cap: the phones don't clearly hear each other. "
+                  "Test stopped; no distances reported.")
+            s.save()
+            raise SystemExit("link check failed: " + link_words(info, A, B))
 
 
 def task4c(args):
@@ -433,7 +449,7 @@ def task4c(args):
     # 12-15 kHz: the POCO's mic stops near 15.5 kHz (MEASURED 2026-10-12), so 16-20 kHz can't link
     # the two phones. Up-sweep vs down-sweep tells the two sounds apart. May be faintly audible.
     specA, specB = "chirp,f0=12000,f1=15000,ms=20,db=-30", "chirp,f0=15000,f1=12000,ms=20,db=-30"
-    link_check(s, a, b, args.phone, args.other, specA, specB, va, vb)
+    va, vb = link_check(s, a, b, args.phone, args.other, specA, specB, va, vb)
     results = []
     for rnd in range(5):
         d, t = pair_round(s, a, b, specA, specB, va, vb)
@@ -605,7 +621,7 @@ def task5h(args):
     # 12-15 kHz: the POCO's mic stops near 15.5 kHz (MEASURED 2026-10-12), so 16-20 kHz can't link
     # the two phones. Up-sweep vs down-sweep tells the two sounds apart. May be faintly audible.
     specA, specB = "chirp,f0=12000,f1=15000,ms=20,db=-30", "chirp,f0=15000,f1=12000,ms=20,db=-30"
-    link_check(s, a, b, args.phone, args.other, specA, specB, va, vb)
+    va, vb = link_check(s, a, b, args.phone, args.other, specA, specB, va, vb)
     est, prev = [], None
     for rnd in range(12):
         ia, ib = s.rid("loopA"), s.rid("loopB")
