@@ -48,7 +48,10 @@ def test_task3_poco_narrow_ping_hand_at_1m(world, tmp_path):
 
 def test_task4c_pair(world, tmp_path):
     rep = go(tmp_path, "task4c")
-    assert "round 5" in rep and "200." in rep or "199." in rep or "201." in rep
+    import re
+    ds = [float(x) for x in re.findall(r"round \d: ([\d.]+) cm", rep)]
+    # true 200 cm; the phone's own two speakers (10 cm apart) leave ~5 cm doubt about its self-path
+    assert len(ds) == 5 and all(190 <= d <= 210 for d in ds), ds
 
 
 @pytest.mark.parametrize("t", ["task5c", "task5d", "task4a"])

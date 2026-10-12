@@ -17,13 +17,28 @@ def _arrival(rec, ref, exclude=None, guard=0):
     return dsp.first_arrival(env), env
 
 
-def distance(recA, recB, refA, refB, rate, self_A=0.0, self_B=0.0):
+def _first(rec, ref, start=0, stop=None):
+    env = np.abs(dsp.matched(rec, ref))
+    start = max(0, int(start))
+    stop = None if stop is None else max(start + 1, int(stop))
+    return dsp.first_arrival(env, start=start, stop=stop)
+
+
+def distance(recA, recB, refA, refB, rate, self_A=0.0, self_B=0.0, gap_s=None):
+    """gap_s: B is known to play at least gap_s after A. Then B's sound is only searched for after A's
+    own sound in A's recording, and A's sound only before B's own in B's recording, so a phone's own
+    loud sound can't be mistaken for the other's quieter one (the real phones are 20-30 dB apart)."""
     recA = np.asarray(recA, dtype=np.float64)
     recB = np.asarray(recB, dtype=np.float64)
-    tAA, _ = _arrival(recA, refA)
-    tBB, _ = _arrival(recB, refB)
-    tAB, _ = _arrival(recA, refB)
-    tBA, _ = _arrival(recB, refA)
+    tAA = _first(recA, refA)
+    tBB = _first(recB, refB)
+    if gap_s is None or tAA is None or tBB is None:
+        tAB = _first(recA, refB)
+        tBA = _first(recB, refA)
+    else:
+        g = int(gap_s * rate)
+        tAB = _first(recA, refB, start=tAA + g)
+        tBA = _first(recB, refA, stop=tBB - g)
     if None in (tAA, tBB, tAB, tBA):
         return None, dict(tAA=tAA, tAB=tAB, tBA=tBA, tBB=tBB)
     d = C / 2 * ((tAB - tAA) - (tBB - tBA)) / rate + (self_A + self_B) / 2

@@ -397,7 +397,9 @@ def task4c(args):
     va, vb = load_levels(args.root).get(args.phone, 3), load_levels(args.root).get(args.other, 3)
     s.say(f"# The Batsight - Task 4c - two-phone round trip, no shared clock - {args.phone} and {args.other}\n")
     s.say("Measure the distance between the two phones with a tape first and write it here: ____ cm")
-    specA, specB = "chirp,f0=16000,f1=18000,ms=20,db=-30", "chirp,f0=20000,f1=18000,ms=20,db=-30"
+    # 12-15 kHz: the POCO's mic stops near 15.5 kHz (MEASURED 2026-10-12), so 16-20 kHz can't link
+    # the two phones. Up-sweep vs down-sweep tells the two sounds apart. May be faintly audible.
+    specA, specB = "chirp,f0=12000,f1=15000,ms=20,db=-30", "chirp,f0=15000,f1=12000,ms=20,db=-30"
     results = []
     for rnd in range(5):
         ia, ib = s.rid("pairA"), s.rid("pairB")
@@ -408,9 +410,10 @@ def task4c(args):
             phone.pull(ser, rid, s.src)
         ra, rb = phone.Run(s.src, ia), phone.Run(s.src, ib)
         d, t = pair.distance(analysis.mono(ra.rec), analysis.mono(rb.rec), signals.reference(specA),
-                             signals.reference(specB), RATE, 0.1, 0.1)
+                             signals.reference(specB), RATE, 0.1, 0.1, gap_s=0.4)
         results.append(d)
-        s.say(f"- round {rnd+1}: {('%.1f cm' % (d*100)) if d is not None else 'not found'} (MEASURED; self speaker-mic assumed 10 cm each, UNCONFIRMED)")
+        s.say(f"- round {rnd+1}: {('%.1f cm' % (d*100)) if d is not None else 'not found'} (MEASURED; self speaker-mic assumed 10 cm each, UNCONFIRMED)"
+              + (f"; B answered {(t['tAB'] - t['tAA']) / RATE * 1000:.0f} ms after A's sound, as heard by A" if d is not None else ""))
     ok = [d for d in results if d is not None]
     if ok:
         s.say(f"- spread over {len(ok)} rounds: {np.std(ok)*100:.1f} cm")
@@ -572,7 +575,9 @@ def task5h(args):
     s.say("Runs Task 4c rounds; each phone keeps its own signature; the estimate is averaged until it stops changing.")
     a, b = phone.serial_of(args.phone), phone.serial_of(args.other)
     va, vb = load_levels(args.root).get(args.phone, 3), load_levels(args.root).get(args.other, 3)
-    specA, specB = "chirp,f0=16000,f1=18000,ms=20,db=-30", "chirp,f0=20000,f1=18000,ms=20,db=-30"
+    # 12-15 kHz: the POCO's mic stops near 15.5 kHz (MEASURED 2026-10-12), so 16-20 kHz can't link
+    # the two phones. Up-sweep vs down-sweep tells the two sounds apart. May be faintly audible.
+    specA, specB = "chirp,f0=12000,f1=15000,ms=20,db=-30", "chirp,f0=15000,f1=12000,ms=20,db=-30"
     est, prev = [], None
     for rnd in range(12):
         ia, ib = s.rid("loopA"), s.rid("loopB")
@@ -585,7 +590,7 @@ def task5h(args):
             phone.wait_for(ser, f"{rid}.json", 60)
             phone.pull(ser, rid, s.src)
         d, _ = pair.distance(analysis.mono(phone.Run(s.src, ia).rec), analysis.mono(phone.Run(s.src, ib).rec),
-                             signals.reference(specA), signals.reference(specB), RATE, 0.1, 0.1)
+                             signals.reference(specA), signals.reference(specB), RATE, 0.1, 0.1, gap_s=0.4)
         if d is not None:
             est.append(d)
         cur = float(np.median(est)) if est else None
