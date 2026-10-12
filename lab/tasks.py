@@ -394,6 +394,20 @@ def task_look(args):
     s.save()
 
 
+def watch_timeline(s, res, every):
+    s.say(f"- {len(res)} chirps analysed (MEASURED). Timeline, one line per second "
+          "(MOVING = changing now; CHANGED = different but steady; ADOPTED = accepted as the new usual):")
+    per = max(1, int(round(1000 / every)))
+    for k in range(0, len(res), per):
+        blk = res[k:k + per]
+        states = [x[0] for x in blk]
+        for st in ("MOVING", "ADOPTED", "CHANGED", "still"):
+            if st in states:
+                break
+        where = [x[1] for x in blk if x[0] == st and x[1] is not None]
+        s.say(f"  {k * every / 1000:5.1f} s  {st}" + (f"  (around {np.median(where) * 100:.0f} cm)" if where else ""))
+
+
 def task_watch(args):
     """Rhythmic chirps for about a minute (founder's idea): does it flag each entrance/exit and
     settle again afterwards? Ding-dong at the start and at the end."""
@@ -409,17 +423,7 @@ def task_watch(args):
     r = run(s, serial, "watch", spec=spec, vol=vol, pre=300, post=300)
     profs, _, _ = echo.profiles(analysis.mono(r.rec), signals.reference(spec), signals.ping_starts(spec), RATE, max_m=4.0)
     np.save(s.work / "watch_profiles.npy", profs)
-    res = echo.watch(profs, RATE, every / 1000)
-    s.say(f"- {len(profs)} chirps analysed (MEASURED). Timeline, one line per second:")
-    per = int(1000 / every)
-    for k in range(0, len(res), per):
-        blk = res[k:k + per]
-        mv = [x for x in blk if x[0]]
-        if mv:
-            where = np.median([x[1] for x in mv])
-            s.say(f"  {k * every / 1000:5.1f} s  MOVING  (biggest change around {where * 100:.0f} cm)")
-        else:
-            s.say(f"  {k * every / 1000:5.1f} s  still")
+    watch_timeline(s, echo.watch(profs, RATE, every / 1000), every)
     s.save()
 
 

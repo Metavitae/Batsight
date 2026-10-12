@@ -253,7 +253,11 @@ def test_watch_flags_a_change_then_settles():
     rng = np.random.default_rng(4)
     room = np.zeros(300, complex); room[100] = 1.0; room[200] = 0.7
     profs = room[None, :] + 0.05 * (rng.normal(size=(200, 300)) + 1j * rng.normal(size=(200, 300)))
-    profs[80:110, 150] += 0.8                         # someone passes at bin 150 for 30 chirps
-    res = echo.watch(profs, RATE, 0.15, lo_m=0.0, hi_m=10.0, min_bins=1)
-    flags = [x[0] for x in res]
-    assert not any(flags[25:75]) and all(flags[85:108]) and not any(flags[120:])
+    t = np.arange(30)
+    profs[80:110, 140:160] += 0.8 * np.exp(1j * 0.5 * t)[:, None]   # someone walking: keeps changing
+    profs[140:, 220] += 0.8                                          # a door opened at chirp 140, then stays
+    res = echo.watch(profs, RATE, 0.15, lo_m=0.0, hi_m=10.0, min_bins=1, settle_s=3.0)
+    st = [x[0] for x in res]
+    assert set(st[25:75]) == {"still"}
+    assert st[90:105].count("MOVING") >= 10
+    assert "ADOPTED" in st[140:175] and set(st[180:]) == {"still"}      # the open door becomes the usual
