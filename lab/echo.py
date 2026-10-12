@@ -232,8 +232,8 @@ def decay_time(env, rate, start_bin=0, smooth_ms=5.0):
 
 
 
-def watch(profs, rate, every_s, lo_m=0.3, hi_m=4.0, fast_n=4, slow_s=15.0, z=4.0, min_bins=8, still_n=20,
-          settle_s=3.0):
+def watch(profs, rate, every_s, lo_m=0.3, hi_m=4.0, fast_n=4, slow_s=15.0, z=4.0, min_bins=20, still_n=20,
+          settle_s=3.0, learn_s=30.0, margin=4.0):
     """Rhythmic 'watch' mode (founder's idea). Three states per chirp:
     MOVING  - the 'now' picture keeps changing from moment to moment (someone walking);
     CHANGED - different from 'the room as usual' but steady (a door left open, a chair moved);
@@ -248,6 +248,12 @@ def watch(profs, rate, every_s, lo_m=0.3, hi_m=4.0, fast_n=4, slow_s=15.0, z=4.0
     alpha = every_s / slow_s
     settle_n = int(round(settle_s / every_s))
     unit = noise[m] / np.sqrt(fast_n)
+    # The room's normal background wobble, learned spot by spot and kept up to date (real run: with
+    # the AC on and a door ajar, the spots near the door wobbled all the time and raised ~20 false
+    # alarms a minute). A running MEDIAN over ~learn_s, so a person walking for a few seconds doesn't
+    # get learned as 'normal', but a fan or a draught does.
+    learn_n = max(10, int(round(learn_s / every_s)))
+    hist_mv, hist_ch = [], []
     out, steady = [], 0
     for i in range(len(profs)):
         if i < 2 * fast_n:
@@ -255,8 +261,20 @@ def watch(profs, rate, every_s, lo_m=0.3, hi_m=4.0, fast_n=4, slow_s=15.0, z=4.0
             continue
         fast = profs[i - fast_n + 1:i + 1].mean(axis=0)
         prev = profs[i - 2 * fast_n + 1:i - fast_n + 1].mean(axis=0)
-        mv = np.abs(fast - prev)[m] / (unit * np.sqrt(2))
-        ch = np.abs(fast - slow)[m] / (unit * np.sqrt(1 + fast_n / still_n))
+        raw_mv = np.abs(fast - prev)[m]
+        raw_ch = np.abs(fast - slow)[m]
+        hist_mv.append(raw_mv); hist_ch.append(raw_ch)
+        hist_mv, hist_ch = hist_mv[-learn_n:], hist_ch[-learn_n:]
+        if len(hist_mv) >= 10:
+            bg_mv = np.median(np.array(hist_mv), axis=0)
+            bg_ch = np.median(np.array(hist_ch), axis=0)
+        else:
+            bg_mv = bg_ch = np.zeros(m.sum())
+        # normal wobble = the larger of the still-start noise and the learned background x margin/z.
+        # margin 4, min_bins 20: tuned on 3 real runs (AC on, door ajar): empty room 100% still, the
+        # founder walking in and out still caught at the same moments. Tuned on few runs: re-check.
+        mv = raw_mv / np.maximum(unit * np.sqrt(2), margin * bg_mv / z)
+        ch = raw_ch / np.maximum(unit * np.sqrt(1 + fast_n / still_n), margin * bg_ch / z)
         n_mv, n_ch = int((mv > z).sum()), int((ch > z).sum())
         if n_mv >= min_bins:
             state, where, n, steady = "MOVING", float(r[m][int(np.argmax(mv))]), n_mv, 0
