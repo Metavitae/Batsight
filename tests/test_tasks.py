@@ -32,10 +32,18 @@ def test_task2(world, tmp_path):
 
 
 def test_task3_baseline_then_hand(world, tmp_path):
-    go(tmp_path, "task3", "--step", "baseline")
+    go(tmp_path, "task3", "--phone", "8T", "--step", "baseline")
     world.echoes.append((0.3, 0.05))
-    rep = go(tmp_path, "task3", "--step", "hand30")
+    rep = go(tmp_path, "task3", "--phone", "8T", "--step", "hand30")
     assert "changed at 30 cm" in rep or "changed at 29 cm" in rep or "changed at 31 cm" in rep
+
+
+def test_task3_poco_narrow_ping_hand_at_1m(world, tmp_path):
+    # the POCO's own ping (10 ms, 17-19 kHz) is blurrier; it should still place a hand at 1 m
+    go(tmp_path, "task3", "--phone", "POCO", "--step", "baseline")
+    world.echoes.append((1.0, 0.05))
+    rep = go(tmp_path, "task3", "--phone", "POCO", "--step", "hand100")
+    assert any(f"changed at {d} cm" in rep for d in range(96, 105)), rep
 
 
 def test_task4c_pair(world, tmp_path):

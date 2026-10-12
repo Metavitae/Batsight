@@ -25,6 +25,17 @@ RATE = 48000
 
 # Quiet, short, smooth pings (safety rule). 16-20 kHz: 4 kHz wide -> about 4 cm range resolution in theory.
 PING = "chirp,f0=16000,f1=20000,ms=5,db=-30"
+# Per-phone ping (MEASURED 2026-10-12): the POCO's speaker+mic has a deep notch near 16.7 kHz and
+# falls off by 20 kHz; at its volume cap only a 10 ms 17-19 kHz chirp was heard on every ping.
+PINGS = {"POCO": "chirp,f0=17000,f1=19000,ms=10,db=-30"}
+
+
+def ping_of(name):
+    return PINGS.get(name, PING)
+
+
+def ping_ms(name):
+    return float(signals.parse(ping_of(name))[0][1]["ms"])
 LEVEL_CAP = 0.6          # never set the phone's media volume above 60 % of its maximum
 
 
@@ -93,7 +104,7 @@ def find_level(s, root, name, serial):
     if known is not None:
         s.say(f"- Volume for {name}: step {known} (found earlier, phone_levels.json)")
         return known
-    spec = PING + ",count=5,every=200"
+    spec = ping_of(name) + ",count=5,every=200"
     ref = signals.reference(spec)
     r = run(s, serial, "level", spec=spec, vol=1)
     vmax = r.meta["volume_max"]
@@ -149,7 +160,7 @@ def task1(args):
     lr_verdict(s, lr)
 
     s.say("\n## Item 7 - delay between 'play' and 'heard'")
-    spec = PING + ",count=5,every=300"
+    spec = ping_of(args.phone) + ",count=5,every=300"
     r = run(s, serial, "latency", spec=spec, vol=vol)
     arr = analysis.direct_delay(r.rec, r.played)
     lat = analysis.latency_report(r.meta, arr)
@@ -291,9 +302,6 @@ def remix_report(s, rn, rs, spec):
 
 # --------------------------------------------------------------------------- task 3 / 5a / 5b
 
-TRAIN = PING + ",count=20,every=100"
-
-
 def task3(args):
     step = args.step or "baseline"
     s = Session(args.root, f"task3_{args.phone}_{step}")
@@ -301,6 +309,9 @@ def task3(args):
     phone.grant(serial)
     vol = find_level(s, args.root, args.phone, serial)
     s.say(f"# The Batsight - Task 3 - echo - {args.phone} - step '{step}'\n")
+    TRAIN = ping_of(args.phone) + ",count=20,every=100"
+    cms = ping_ms(args.phone)
+    s.say(f"Ping: `{ping_of(args.phone)}`, 20 pings.")
     s.say({"baseline": "Empty room, phone still on a table, nothing within about 2 m in front of it.",
            "hand30": "A hand (or a book) held still 30 cm in front of the phone's speaker/mic.",
            "hand100": "The same hand or book held still 1 m in front."}.get(step, step))
@@ -313,7 +324,7 @@ def task3(args):
         np.savez(base_file, base=echo.baseline(profs), noise=echo.noise_level(profs))
         env = np.abs(profs.mean(axis=0))
         noise = echo.noise_level(profs) / np.sqrt(len(profs))
-        st = echo.states_1d(env, np.maximum(noise, np.median(env) * 0.5), RATE, chirp_ms=5)
+        st = echo.states_1d(env, np.maximum(noise, np.median(env) * 0.5), RATE, chirp_ms=cms)
         describe_states(s, st, env)
         s.say(f"- Room signature saved ({len(profs)} pings). Next: --step hand30, then --step hand100.")
     else:
@@ -321,7 +332,7 @@ def task3(args):
             raise SystemExit("Record the baseline first (--step baseline).")
         b = np.load(base_file)
         res = np.abs(echo.residual(profs, b["base"]).mean(axis=0))
-        found = echo.changed(res, b["noise"] / np.sqrt(len(profs)) * 3, RATE, chirp_ms=5)
+        found = echo.changed(res, b["noise"] / np.sqrt(len(profs)) * 3, RATE, chirp_ms=cms)
         if found:
             for d, ratio in found:
                 s.say(f"- something changed at {d*100:.0f} cm (leftover {ratio:.0f}x the still-room noise) (MEASURED)")
@@ -454,7 +465,7 @@ def task5e(args):
     phone.grant(serial)
     vol = find_level(s, args.root, args.phone, serial)
     s.say(f"# The Batsight - Task 5e - averaging while still / noticing movement - {args.phone} - '{step}'\n")
-    spec = PING + (",count=100,every=60" if step == "still" else ",count=60,every=100")
+    spec = ping_of(args.phone) + (",count=100,every=60" if step == "still" else ",count=60,every=100")
     s.say("Phone still on the table, a box or book 1 m in front." if step == "still"
           else "Phone still. After about 2 seconds, walk slowly across the room 1-2 m in front of it.")
     r = run(s, serial, f"avg_{step}", spec=spec, vol=vol)
@@ -529,7 +540,7 @@ def task5g(args):
     s.say(f"# The Batsight - Task 5g - probable-surface picture from a cane sweep - {args.phone}\n")
     s.say("Simple tape-measured room with one chair. Hold the phone level at chest height, screen up, top edge "
           "pointing forward; sweep slowly left-right-left over about 10 s. Note the chair's distance and side.")
-    spec = PING + ",count=100,every=100"
+    spec = ping_of(args.phone) + ",count=100,every=100"
     r = run(s, serial, "cane", spec=spec, vol=vol, motion=True)
     profs, arrivals, _ = echo.profiles(analysis.mono(r.rec), signals.reference(spec), signals.ping_starts(spec), RATE, max_m=4.0)
     angles = yaw_per_ping(r.motion, r.meta, arrivals, RATE)
