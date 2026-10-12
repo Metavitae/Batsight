@@ -366,8 +366,8 @@ def task4a(args):
     serial = phone.serial_of(args.phone)
     phone.grant(serial)
     s.say(f"# The Batsight - Task 4a - your own clicks - {args.phone} - step '{args.step or 'wall'}'\n")
-    s.say("Nothing is played. Snap or tongue-click 3-5 times, about 1 s apart, standing next to the phone.")
-    r = run(s, serial, f"clicks_{args.step or 'wall'}", record=8000)
+    s.say("Nothing is played. Snap or tongue-click 3-5 times, about 1 s apart, standing next to the phone (15 s recording).")
+    r = run(s, serial, f"clicks_{args.step or 'wall'}", record=15000)
     x = analysis.mono(r.rec)
     env = np.abs(dsp.analytic(dsp.bandpass(x, RATE, 1000, 12000)))
     thr = 10 * np.median(env)
@@ -386,6 +386,8 @@ def task4a(args):
         s.say(f"- click at {t:.2f} s: strongest repeat at {d*100:.0f} cm (strength {q:.2f} of the click) (MEASURED)")
     if not found:
         s.say("- no click found (MEASURED)")
+    s.say("- WARNING: this per-click readout also 'finds' echoes in a take with no clicks at all (seen on the real "
+          "phones). A hand click rings 20-90 ms, longer than a 1-3 m echo takes to return. Don't trust these lines alone.")
     s.save()
 
 
