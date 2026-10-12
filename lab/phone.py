@@ -1,4 +1,5 @@
 """Drive the Sound Lab app on the phones over adb."""
+import re
 import json
 import shlex
 import subprocess
@@ -39,6 +40,17 @@ def serial_of(name):
     return d[name]
 
 
+def get_volume(serial):
+    """Media volume step right now (None if the phone won't say)."""
+    out = adb(serial, "shell", "cmd", "media_session", "volume", "--stream", "3", "--get", check=False)
+    m = re.search(r"volume is (\d+)", out or "")
+    return int(m.group(1)) if m else None
+
+
+def set_volume(serial, step):
+    adb(serial, "shell", "cmd", "media_session", "volume", "--stream", "3", "--set", str(step), check=False)
+
+
 def install(serial, apk):
     """Normal install; the POCO blocks adb installs, so there the APK is pushed and the phone's own
     installer is opened (founder taps Install, or CC taps it)."""
@@ -71,7 +83,8 @@ def start(serial, mode, run_id, **extras):
 def wait_for(serial, name, timeout=120):
     end = time.time() + timeout
     while time.time() < end:
-        if adb(serial, "shell", f"ls {REMOTE}/{name} 2>/dev/null", check=False).strip():
+        # Android may save "x.json" as "x.json.txt" (seen on the 8T, app 0.1); accept either.
+        if adb(serial, "shell", f"ls {REMOTE}/{name} {REMOTE}/{name}.txt 2>/dev/null", check=False).strip():
             time.sleep(0.5)          # let the file finish writing
             return True
         time.sleep(1)
@@ -84,10 +97,11 @@ def pull(serial, run_id, dest, delete=True):
     dest.mkdir(parents=True, exist_ok=True)
     names = [n for n in adb(serial, "shell", f"ls {REMOTE}", check=False).split() if n.startswith(run_id)]
     for n in names:
-        adb(serial, "pull", f"{REMOTE}/{n}", str(dest / n), timeout=180)
+        local = n[:-4] if n.endswith((".json.txt", ".csv.txt")) else n
+        adb(serial, "pull", f"{REMOTE}/{n}", str(dest / local), timeout=180)
         if delete:
             adb(serial, "shell", "rm", f"{REMOTE}/{n}", check=False)
-    return [dest / n for n in names]
+    return [dest / (n[:-4] if n.endswith((".json.txt", ".csv.txt")) else n) for n in names]
 
 
 def push_signal(serial, wav_path):

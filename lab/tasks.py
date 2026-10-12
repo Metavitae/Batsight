@@ -576,7 +576,15 @@ def main(argv=None):
         return
     if args.task not in tasks:
         sys.exit(f"unknown task {args.task}; choose from facts, {', '.join(tasks)}")
-    tasks[args.task](args)
+    # The app sets a quiet test volume; put the founder's own volume back afterwards.
+    serials = [phone.serial_of(n) for n in (args.phone, args.other) if n and n in phone.devices()]
+    before = {sr: phone.get_volume(sr) for sr in serials}
+    try:
+        tasks[args.task](args)
+    finally:
+        for sr, v in before.items():
+            if v is not None:
+                phone.set_volume(sr, v)
 
 
 if __name__ == "__main__":

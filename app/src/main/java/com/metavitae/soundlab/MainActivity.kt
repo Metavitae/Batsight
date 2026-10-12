@@ -142,7 +142,7 @@ class MainActivity : Activity() {
             val res = try { PlayRecord(this, p) { s -> runOnUiThread { status?.text = s } }.run() }
                       catch (e: Throwable) {
                           val msg = "FAILED: ${e.javaClass.simpleName} ${e.message}"
-                          Results.saveText(this, "${p.id}.json", Json().put("id", p.id).put("error", msg).toString())
+                          Results.save(this, "${p.id}.json", "application/json", Json().put("id", p.id).put("error", msg).toString().toByteArray())
                           msg
                       }
             busy = false

@@ -227,7 +227,7 @@ class PlayRecord(private val ctx: Context, private val p: Params, private val st
         val saved = ArrayList<String>()
         saved.add(Results.save(ctx, "${p.id}.wav", "audio/x-wav", Wav.bytes(samples, realRate, realCh)))
         if (played != null) saved.add(Results.save(ctx, "${p.id}_played.wav", "audio/x-wav", Wav.stereoBytes(played, p.rate)))
-        if (p.motion) saved.add(Results.saveText(ctx, "${p.id}_motion.csv", synchronized(motion) { motion.toString() }))
+        if (p.motion) saved.add(Results.save(ctx, "${p.id}_motion.csv", "text/csv", synchronized(motion) { motion.toString() }.toByteArray()))
 
         val meta = Json()
             .put("id", p.id).put("model", Build.MODEL).put("manufacturer", Build.MANUFACTURER)
@@ -249,7 +249,7 @@ class PlayRecord(private val ctx: Context, private val p: Params, private val st
             .raw("effects", effects.toString())
             .raw("notes", Json.list(notes.map { Json.quote(it) }))
             .raw("saved", Json.list(saved.map { Json.quote(it) }))
-        val last = Results.saveText(ctx, "${p.id}.json", meta.toString())
+        val last = Results.save(ctx, "${p.id}.json", "application/json", meta.toString().toByteArray())
         return (saved + last).joinToString("\n") + if (notes.isEmpty()) "" else "\nNotes: " + notes.joinToString("; ")
     }
 }
