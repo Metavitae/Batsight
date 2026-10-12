@@ -30,6 +30,9 @@ PING = "chirp,f0=16000,f1=20000,ms=5,db=-30"
 PINGS = {"POCO": "chirp,f0=17000,f1=19000,ms=10,db=-30"}
 
 
+ECHO_BOOST = ",ms=20,db=-20"
+
+
 def ping_of(name):
     return PINGS.get(name, PING)
 
@@ -309,15 +312,19 @@ def task3(args):
     phone.grant(serial)
     vol = find_level(s, args.root, args.phone, serial)
     s.say(f"# The Batsight - Task 3 - echo - {args.phone} - step '{step}'\n")
-    TRAIN = ping_of(args.phone) + ",count=20,every=100"
-    cms = ping_ms(args.phone)
-    s.say(f"Ping: `{ping_of(args.phone)}`, 20 pings.")
+    # Founder's call 2026-10-12, after the first real run found nothing at 30 cm: echo pings
+    # 10 dB louder (-20 dBFS, volume cap unchanged), 20 ms long, 100 per step.
+    TRAIN = ping_of(args.phone) + ECHO_BOOST + ",count=100,every=100"
+    cms = 20.0
+    s.say(f"Ping: `{TRAIN}` (100 pings, 10 s).")
     s.say({"baseline": "Empty room, phone still on a table, nothing within about 2 m in front of it.",
            "hand30": "A hand (or a book) held still 30 cm in front of the phone's speaker/mic.",
            "hand100": "The same hand or book held still 1 m in front."}.get(step, step))
     r = run(s, serial, f"echo_{step}", spec=TRAIN, vol=vol, pre=500, post=300)
     ref = signals.reference(TRAIN)
     profs, arrivals, _ = echo.profiles(analysis.mono(r.rec), ref, signals.ping_starts(TRAIN), RATE, max_m=4.0)
+    if len(profs) < 0.8 * 100:
+        s.say(f"- WARNING: only {len(profs)} of 100 pings found in the recording (MEASURED)")
     np.save(s.work / f"echo_{step}_profiles.npy", profs)
     base_file = Path(args.root) / "Art" / "Working" / f"baseline_{args.phone}.npz"
     if step == "baseline":
