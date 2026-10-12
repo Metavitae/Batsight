@@ -47,6 +47,7 @@ class PlayRecord(private val ctx: Context, private val p: Params, private val st
         val swap: Boolean,        // swap left and right before playing
         val motion: Boolean,      // log gyroscope + accelerometer during the run
         val effectsOff: Boolean,  // switch off noise suppression / echo cancelling / auto gain if the phone allows
+        val armed: Boolean = false, // handshake: report "recording", play only on <id>.go, stop only on <id>.stop
     )
 
     companion object {
@@ -201,6 +202,25 @@ class PlayRecord(private val ctx: Context, private val p: Params, private val st
         rec.startRecording()
         reader.start()
         Thread.sleep((p.preMs + p.delayMs).toLong())
+        // Handshake (founder's idea, 2026-10-12): no guessing by the clock. Say "I'm recording" only
+        // once sound is really arriving, then wait for the computer's go (a file it drops in our own
+        // files/signals/ folder). Max 60 s, then give up.
+        val trig = ctx.getExternalFilesDir("signals")!!
+        fun waitFor(name: String): Boolean {
+            val f = File(trig, "${p.id}.$name")
+            val end = System.currentTimeMillis() + 60_000
+            while (System.currentTimeMillis() < end) {
+                if (f.exists()) { f.delete(); return true }
+                Thread.sleep(2)
+            }
+            return false
+        }
+        if (p.armed) {
+            while (data.count == 0) Thread.sleep(2)
+            Results.saveText(ctx, "${p.id}_recording.txt", "recording")
+            status("Recording, waiting for go...")
+            if (!waitFor("go")) notes.add("no go signal within 60 s")
+        }
 
         var playCallNs = 0L
         var framesAtPlayCall = 0L
@@ -216,7 +236,14 @@ class PlayRecord(private val ctx: Context, private val p: Params, private val st
                 if (!trackTsOk && track.getTimestamp(trackTs) && trackTs.framePosition > 0) trackTsOk = true
                 Thread.sleep(5)
             }
-            Thread.sleep(p.postMs.toLong())
+            if (p.armed) {
+                Results.saveText(ctx, "${p.id}_played.txt", "played")
+                status("Played, recording until stop...")
+                if (!waitFor("stop")) notes.add("no stop signal within 60 s")
+                Thread.sleep(p.postMs.toLong())
+            } else Thread.sleep(p.postMs.toLong())
+        } else if (p.armed) {
+            if (!waitFor("stop")) notes.add("no stop signal within 60 s")
         } else Thread.sleep(p.recordMs.toLong())
 
         recording = false

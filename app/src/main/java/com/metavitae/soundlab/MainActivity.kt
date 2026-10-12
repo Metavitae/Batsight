@@ -44,6 +44,7 @@ class MainActivity : Activity() {
                     swap = i.getBooleanExtra("swap", false),
                     motion = i.getBooleanExtra("motion", false),
                     effectsOff = i.getBooleanExtra("fxoff", true),
+                    armed = i.getBooleanExtra("armed", false),
                 ))
             }
             null -> showSafety()

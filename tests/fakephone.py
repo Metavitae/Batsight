@@ -27,11 +27,19 @@ class FakeWorld:
         monkeypatch.setattr(phone, "wait_for", self.wait_for)
         monkeypatch.setattr(phone, "pull", self.pull)
         monkeypatch.setattr(phone, "max_volume", lambda serial: 10)
+        monkeypatch.setattr(phone, "trigger", lambda serial, run_id, what: None)
 
     def start(self, serial, mode, run_id, **opts):
         self.pending[run_id] = (serial, mode, opts)
 
-    def wait_for(self, serial, name, timeout=0):
+    @staticmethod
+    def eff_pre(o):
+        # an 'armed' (handshake) run plays when told: first player early, second one later
+        if o.get("armed"):
+            return 600 if o.get("role") == "first" else 3500
+        return o.get("pre", 500)
+
+    def wait_for(self, serial, name, timeout=0, every=1.0):
         # 'run' everything that is pending at once (two phones at the same time)
         todo = {k: v for k, v in self.pending.items()}
         self.pending.clear()
@@ -46,8 +54,9 @@ class FakeWorld:
             (d / f"{rid}.txt").write_text("Sound Lab - Phone sound facts\n(fake phone)\n")
             return
         self.n += 1
-        pre = opts.get("pre", 500)
-        rec_len = int((pre + opts.get("delay", 0) + opts.get("post", 500)) / 1000 * RATE)
+        pre = self.eff_pre(opts)
+        post = (5000 - pre) if opts.get("armed") else opts.get("post", 500)   # armed: records until 'stop'
+        rec_len = int((pre + opts.get("delay", 0) + post) / 1000 * RATE)
         played = signals.build(opts["spec"], RATE) if opts.get("spec") else None
         if played is not None and opts.get("swap"):
             played = played[:, ::-1]
@@ -66,7 +75,7 @@ class FakeWorld:
             if prid == rid:
                 continue
             p = signals.build(popts["spec"], RATE) * 0.3 * self.pair_gain * (0.1 * popts["vol"] if popts.get("vol", -1) >= 0 else 0.5)
-            k = int(popts.get("pre", 500) / 1000 * RATE + self.pair_distance / C * RATE)
+            k = int(self.eff_pre(popts) / 1000 * RATE + self.pair_distance / C * RATE)
             seg = p[:, 0] + p[:, 1]
             end = min(len(y), k + len(seg))
             if k < len(y):

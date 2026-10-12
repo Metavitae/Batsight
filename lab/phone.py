@@ -102,14 +102,19 @@ def start_together(jobs):
         t.join()
 
 
-def wait_for(serial, name, timeout=120):
+def trigger(serial, run_id, what):
+    """Handshake signal for an 'armed' run: drop <id>.go or <id>.stop into the app's own folder."""
+    adb(serial, "shell", f"mkdir -p {SIGNALS} && touch {SIGNALS}/{run_id}.{what}")
+
+
+def wait_for(serial, name, timeout=120, every=1.0):
     end = time.time() + timeout
     while time.time() < end:
         # Android may save "x.json" as "x.json.txt" (seen on the 8T, app 0.1); accept either.
         if adb(serial, "shell", f"ls {REMOTE}/{name} {REMOTE}/{name}.txt 2>/dev/null", check=False).strip():
-            time.sleep(0.5)          # let the file finish writing
+            time.sleep(min(0.5, every))   # let the file finish writing
             return True
-        time.sleep(1)
+        time.sleep(every)
     raise TimeoutError(f"{name} did not appear on the phone within {timeout} s")
 
 

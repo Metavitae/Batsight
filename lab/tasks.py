@@ -402,17 +402,26 @@ def link_words(info, A, B):
 
 
 def pair_round(s, a, b, specA, specB, va, vb):
-    """One round: both phones start together; A plays 2 s after its start (the POCO sometimes needs
-    1.6 s to start recording, MEASURED), B plays 5 s after its start."""
+    """One round with a HANDSHAKE (founder's idea): no guessing by the clock.
+    1. both phones start recording and each reports 'recording'; 2. only then A plays;
+    3. A reports 'played', then B plays; 4. B reports 'played', then both are told to stop."""
     ia, ib = s.rid("pairA"), s.rid("pairB")
-    phone.start_together([(b, "play-record", ib, dict(spec=specB, vol=vb, pre=5000, post=1000)),
-                          (a, "play-record", ia, dict(spec=specA, vol=va, pre=2000, post=4500))])
+    phone.start_together([(b, "play-record", ib, dict(spec=specB, vol=vb, pre=300, post=300, armed=True, role="second")),
+                          (a, "play-record", ia, dict(spec=specA, vol=va, pre=300, post=300, armed=True, role="first"))])
+    for ser, rid in ((a, ia), (b, ib)):
+        phone.wait_for(ser, f"{rid}_recording.txt", 60, every=0.1)
+    phone.trigger(a, ia, "go")
+    phone.wait_for(a, f"{ia}_played.txt", 60, every=0.1)
+    phone.trigger(b, ib, "go")
+    phone.wait_for(b, f"{ib}_played.txt", 60, every=0.1)
+    for ser, rid in ((a, ia), (b, ib)):
+        phone.trigger(ser, rid, "stop")
     for ser, rid in ((a, ia), (b, ib)):
         phone.wait_for(ser, f"{rid}.json", 60)
         phone.pull(ser, rid, s.src)
     ra, rb = phone.Run(s.src, ia), phone.Run(s.src, ib)
     return pair.distance(analysis.mono(ra.rec), analysis.mono(rb.rec), signals.reference(specA),
-                         signals.reference(specB), RATE, 0.1, 0.1, gap_s=0.4)
+                         signals.reference(specB), RATE, 0.1, 0.1, gap_s=0.2)
 
 
 def link_check(s, a, b, A, B, specA, specB, va, vb):
@@ -661,18 +670,13 @@ def task5h(args):
     va, vb = link_check(s, a, b, args.phone, args.other, specA, specB, va, vb)
     est, prev = [], None
     for rnd in range(12):
-        ia, ib = s.rid("loopA"), s.rid("loopB")
-        early, late = (a, ia, specA, va), (b, ib, specB, vb)
-        if rnd % 2:   # swap roles every round
-            early, late = late, early
-        phone.start_together([(late[0], "play-record", late[1], dict(spec=late[2], vol=late[3], pre=5000, post=1000)),
-                              (early[0], "play-record", early[1], dict(spec=early[2], vol=early[3], pre=2000, post=4500))])
-        for ser, rid in ((a, ia), (b, ib)):
-            phone.wait_for(ser, f"{rid}.json", 60)
-            phone.pull(ser, rid, s.src)
-        e_rec, l_rec = analysis.mono(phone.Run(s.src, early[1]).rec), analysis.mono(phone.Run(s.src, late[1]).rec)
-        d, info = pair.distance(e_rec, l_rec, signals.reference(early[2]), signals.reference(late[2]), RATE, 0.1, 0.1, gap_s=0.4)
-        first = args.phone if early[0] == a else args.other
+        # swap roles every round
+        if rnd % 2 == 0:
+            d, info = pair_round(s, a, b, specA, specB, va, vb)
+            first = args.phone
+        else:
+            d, info = pair_round(s, b, a, specB, specA, vb, va)
+            first = args.other
         if d is not None:
             est.append(d)
         cur = float(np.median(est)) if est else None
