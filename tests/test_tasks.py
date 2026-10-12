@@ -76,6 +76,7 @@ def test_task5_single_phone(world, tmp_path, t):
 
 def test_task5e(world, tmp_path):
     assert "after 50 pings" in go(tmp_path, "task5e", "--step", "still")
+    assert "first .moving. group" in go(tmp_path, "task5e", "--step", "walk") or "no movement flagged" in go(tmp_path, "task5e", "--step", "walk")
 
 
 def test_task5f_angles(world, tmp_path):

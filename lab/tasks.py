@@ -540,7 +540,9 @@ def task5e(args):
     phone.grant(serial)
     vol = find_level(s, args.root, args.phone, serial)
     s.say(f"# The Batsight - Task 5e - averaging while still / noticing movement - {args.phone} - '{step}'\n")
-    spec = ping_of(args.phone) + (",count=100,every=60" if step == "still" else ",count=60,every=100")
+    # walk: the stronger echo ping (founder-approved for echo tests); the brief's quiet ping barely
+    # showed a walking person on the real 8T (MEASURED 2026-10-12)
+    spec = ping_of(args.phone) + (",count=100,every=60" if step == "still" else ECHO_BOOST + ",count=80,every=100")
     s.say("Phone still on the table, nobody moving." if step == "still"
           else "Phone still. After about 2 seconds, walk slowly across the room 1-2 m in front of it.")
     r = run(s, serial, f"avg_{step}", spec=spec, vol=vol)
@@ -553,11 +555,21 @@ def task5e(args):
         s.say("  (noise = how much two separate groups of N pings disagree; 100 pings make two groups of 50, "
               "so 50 is the last honest step)")
     else:
-        noise = echo.noise_level(profs[:15])
-        flags = echo.motion_flags(profs, noise, blank=echo.blank_bins(RATE, 0.3))
-        s.say(f"- pings flagged 'moving': {np.nonzero(flags)[0].tolist()} (MEASURED; walking started ~ping 20)")
-        _, used = echo.average_with_restart(profs, flags)
-        s.say(f"- the average would restart and use only the last {used} pings")
+        rr_m = (rr > 0.3) & (rr < 3.0)
+        base = profs[:10].mean(axis=0)
+        n1 = np.sqrt((np.abs(profs[:10] - base) ** 2).mean(axis=0)) + 1e-20
+        moving = []
+        for i in range(0, len(profs) - 4, 5):
+            # groups of 5 pings vs the still start (a single ping is noisier than the room's echoes)
+            ch = np.abs(profs[i:i + 5].mean(axis=0) - base)[rr_m] / (n1[rr_m] / np.sqrt(5) * np.sqrt(1 + 5 / 10))
+            big = int((ch > 4).sum())
+            where = rr[rr_m][int(np.argmax(ch))]
+            flag = big >= 8
+            moving.append(flag)
+            s.say(f"- {i/10:.1f}-{(i+4)/10:.1f} s: {big} distances changed >4x" + (f", most at {where*100:.0f} cm -> MOVING" if flag else ""))
+        first = next((i for i, f in enumerate(moving) if f), None)
+        s.say(f"- first 'moving' group: {first*0.5:.1f} s (MEASURED)" if first is not None else "- no movement flagged (MEASURED)")
+        s.say("  The average restarts at every 'moving' group instead of drawing a false picture.")
     s.save()
 
 
