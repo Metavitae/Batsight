@@ -240,7 +240,11 @@ def task2(args):
 
 def remix_report(s, rn, rs, spec):
     refA, refB = signals.reference(spec, RATE, 0), signals.reference(spec, RATE, 1)
-    two = rn.rec.shape[1] == 2 and not np.allclose(rn.rec[:, 0], rn.rec[:, 1])
+    two = False
+    if rn.rec.shape[1] == 2:
+        l, r = rn.rec[:, 0].astype(np.float64), rn.rec[:, 1].astype(np.float64)
+        corr = float(np.dot(l, r) / (np.sqrt(np.dot(l, l) * np.dot(r, r)) + 1e-20))
+        two = corr < 0.99           # 0.99+ = one mic copied (the POCO's unprocessed 'stereo' is 1.00)
     s.say(f"- Recording has {rn.rec.shape[1]} channel(s); {'two different mics' if two else 'one mic (channels identical)'} (MEASURED)")
 
     def peak(rec, ref):
@@ -264,8 +268,15 @@ def remix_report(s, rn, rs, spec):
         quiet = slice(0, int(0.4 * RATE))
         before = dsp.rms(analysis.mono(rn.rec)[quiet])
         after = dsp.rms(sub[quiet])
-        s.say(f"- swap: written. Subtract left-right: steady room noise {dsp.db(before):.1f} -> {dsp.db(after):.1f} dB "
-              f"({'helps' if after < before * 0.7 else 'little effect'}); ping A after subtracting: {dsp.db(peak(sub, refA)):.1f} dB")
+        if not two:
+            s.say("- swap: written. Subtract left-right: NOT MEANINGFUL here - both channels are one mic, so "
+                  "subtracting erases everything, the pings too (MEASURED)")
+        else:
+            pa0, pa1 = peak(analysis.mono(rn.rec), refA), peak(sub, refA)
+            gain = (dsp.db(pa1) - dsp.db(after)) - (dsp.db(pa0) - dsp.db(before))
+            s.say(f"- swap: written. Subtract left-right: steady room noise {dsp.db(before):.1f} -> {dsp.db(after):.1f} dB, "
+                  f"ping A {dsp.db(pa0):.1f} -> {dsp.db(pa1):.1f} dB; ping-over-noise changes by {gain:+.1f} dB "
+                  f"({'helps' if gain > 3 else 'hurts' if gain < -3 else 'little effect'}) (MEASURED)")
     else:
         s.say("- swap / subtract: not possible, one recording channel")
     wavio.write(w / f"{rn.id}_reversed.wav", remix.reverse(rn.rec), RATE)

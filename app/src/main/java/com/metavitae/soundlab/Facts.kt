@@ -154,8 +154,8 @@ class Facts(private val ctx: Context, private val status: (String) -> Unit) {
             sl += l * l; sr += r * r; slr += l * r
             i += 2
         }
-        if (same) return "IDENTICAL (one mic copied twice)"
         val corr = if (sl == 0.0 || sr == 0.0) 0.0 else slr / sqrt(sl * sr)
+        if (same || corr >= 0.99) return "IDENTICAL or nearly (one mic copied twice, correlation ${f2(corr)})"
         return "different (correlation ${f2(corr)}; near 1.00 = nearly the same sound, lower = two separate mics likely)"
     }
 
