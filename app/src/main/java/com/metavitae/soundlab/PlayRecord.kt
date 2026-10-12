@@ -216,7 +216,7 @@ class PlayRecord(private val ctx: Context, private val p: Params, private val st
             return false
         }
         if (p.armed) {
-            while (data.count == 0) Thread.sleep(2)
+            while (data.count == 0L) Thread.sleep(2)
             Results.saveText(ctx, "${p.id}_recording.txt", "recording")
             status("Recording, waiting for go...")
             if (!waitFor("go")) notes.add("no go signal within 60 s")
