@@ -402,11 +402,11 @@ def link_words(info, A, B):
 
 
 def pair_round(s, a, b, specA, specB, va, vb):
-    """One round: B (late player) starts first because an adb start takes ~1 s (MEASURED: the first
-    real try had the recordings miss each other), A plays ~0.6 s after its start, B ~3.5 s after its."""
+    """One round: both phones start together; A plays 2 s after its start (the POCO sometimes needs
+    1.6 s to start recording, MEASURED), B plays 5 s after its start."""
     ia, ib = s.rid("pairA"), s.rid("pairB")
-    phone.start_together([(b, "play-record", ib, dict(spec=specB, vol=vb, pre=3500, post=1000)),
-                          (a, "play-record", ia, dict(spec=specA, vol=va, pre=600, post=4500))])
+    phone.start_together([(b, "play-record", ib, dict(spec=specB, vol=vb, pre=5000, post=1000)),
+                          (a, "play-record", ia, dict(spec=specA, vol=va, pre=2000, post=4500))])
     for ser, rid in ((a, ia), (b, ib)):
         phone.wait_for(ser, f"{rid}.json", 60)
         phone.pull(ser, rid, s.src)
@@ -665,8 +665,8 @@ def task5h(args):
         early, late = (a, ia, specA, va), (b, ib, specB, vb)
         if rnd % 2:   # swap roles every round
             early, late = late, early
-        phone.start_together([(late[0], "play-record", late[1], dict(spec=late[2], vol=late[3], pre=3500, post=1000)),
-                              (early[0], "play-record", early[1], dict(spec=early[2], vol=early[3], pre=600, post=4500))])
+        phone.start_together([(late[0], "play-record", late[1], dict(spec=late[2], vol=late[3], pre=5000, post=1000)),
+                              (early[0], "play-record", early[1], dict(spec=early[2], vol=early[3], pre=2000, post=4500))])
         for ser, rid in ((a, ia), (b, ib)):
             phone.wait_for(ser, f"{rid}.json", 60)
             phone.pull(ser, rid, s.src)
