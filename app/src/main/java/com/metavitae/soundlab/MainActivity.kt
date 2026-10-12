@@ -1,0 +1,152 @@
+package com.metavitae.soundlab
+
+import android.Manifest
+import android.app.Activity
+import android.content.pm.PackageManager
+import android.graphics.Color
+import android.os.Bundle
+import android.view.WindowManager
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
+
+class MainActivity : Activity() {
+    private var pendingMic: (() -> Unit)? = null
+    @Volatile private var busy = false
+
+    override fun onCreate(b: Bundle?) {
+        super.onCreate(b)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // adb shortcuts for CC (CC grants the mic permission first with `pm grant`):
+        //   --es mode facts --es id <name>
+        //   --es mode play-record --es id <name> [--es spec "<recipe>" | --es file <wav in files/signals/>]
+        //        [--es source unprocessed] [--ei ch 1] [--ei rate 48000] [--ei mic -1] [--es out speaker]
+        //        [--ei vol -1] [--ei pre 500] [--ei post 500] [--ei delay 0] [--ei record 3000]
+        //        [--ez swap false] [--ez motion false] [--ez fxoff true]
+        val i = intent
+        when (i.getStringExtra("mode")) {
+            "facts" -> withMic { showFacts(i.getStringExtra("id") ?: "facts_${stamp()}") }
+            "play-record" -> withMic {
+                showRun(PlayRecord.Params(
+                    id = i.getStringExtra("id") ?: "run_${stamp()}",
+                    spec = i.getStringExtra("spec"),
+                    file = i.getStringExtra("file"),
+                    source = i.getStringExtra("source") ?: "unprocessed",
+                    channels = i.getIntExtra("ch", 1),
+                    rate = i.getIntExtra("rate", 48000),
+                    micId = i.getIntExtra("mic", -1),
+                    out = i.getStringExtra("out") ?: "speaker",
+                    vol = i.getIntExtra("vol", -1),
+                    preMs = i.getIntExtra("pre", 500),
+                    postMs = i.getIntExtra("post", 500),
+                    delayMs = i.getIntExtra("delay", 0),
+                    recordMs = i.getIntExtra("record", 3000),
+                    swap = i.getBooleanExtra("swap", false),
+                    motion = i.getBooleanExtra("motion", false),
+                    effectsOff = i.getBooleanExtra("fxoff", true),
+                ))
+            }
+            null -> showSafety()
+            else -> showMenu()
+        }
+    }
+
+    private fun scrollPage(build: LinearLayout.() -> Unit) {
+        val col = column()
+        col.build()
+        val sv = ScrollView(this)
+        sv.setBackgroundColor(Color.BLACK)
+        sv.addView(col)
+        setContentView(sv)
+    }
+
+    private fun withMic(f: () -> Unit) {
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) f()
+        else { pendingMic = f; requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 1) }
+    }
+
+    override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, res: IntArray) {
+        super.onRequestPermissionsResult(code, perms, res)
+        val f = pendingMic
+        pendingMic = null
+        if (res.isNotEmpty() && res[0] == PackageManager.PERMISSION_GRANTED) f?.invoke() else showMenu()
+    }
+
+    // ---------------------------------------------------------------- safety
+
+    private fun showSafety() {
+        scrollPage {
+            text("Sound Lab", 28f, bold = true)
+            text("The Batsight test app", 15f, color = Color.LTGRAY)
+            text("BEFORE TESTING", 20f, bold = true, color = Color.rgb(255, 200, 0))
+            text("This app plays very high, quiet sounds. People often can't hear them, but dogs, cats and other animals can.")
+            text("• No pets, small animals or sleeping people in the room or next door.")
+            text("• Keep the phone away from your ears.")
+            text("• If you hear a high whine, turn the volume down.")
+            text("• Stop at once if an animal reacts.")
+            text("• The mic is on only while a test runs. The red 'Mic is on' line shows when.")
+            button("I understand. Continue") { showMenu() }
+        }
+    }
+
+    // ------------------------------------------------------------------ menu
+
+    private fun showMenu() {
+        scrollPage {
+            text("Sound Lab", 28f, bold = true)
+            text("Results are saved in Download/SoundLab (open Files by Google). Most tests are started by CC from the computer.", 14f, color = Color.LTGRAY)
+            button("1. Phone sound facts (automatic, about 15 seconds, silent)") { withMic { showFacts("facts_${stamp()}") } }
+            button("2. One quiet test chirp (high pitch, 10 ms)") {
+                withMic {
+                    showRun(PlayRecord.Params("quick_${stamp()}", "chirp,f0=17000,f1=19000,ms=10,db=-30", null, "unprocessed",
+                        1, 48000, -1, "speaker", -1, 300, 300, 0, 0, false, false, true))
+                }
+            }
+        }
+    }
+
+    private fun showFacts(id: String) {
+        if (busy) return
+        busy = true
+        var status: TextView? = null
+        var out: TextView? = null
+        scrollPage {
+            text("Phone sound facts", 24f, bold = true)
+            text("● Mic is on", 16f, bold = true, color = Color.RED)
+            text("Lay the phone face up on a table and don't touch it. Nothing is played.", 15f)
+            status = text("Starting...", 16f, color = Color.rgb(255, 200, 0))
+            out = text("", 12f)
+        }
+        Thread {
+            val report = try { Facts(this) { s -> runOnUiThread { status?.text = s } }.run() }
+                         catch (e: Throwable) { "FAILED: ${e.javaClass.simpleName} ${e.message}" }
+            val path = Results.saveText(this, "$id.txt", report)
+            busy = false
+            runOnUiThread { status?.text = "Done. Saved: $path"; out?.text = report }
+        }.start()
+    }
+
+    private fun showRun(p: PlayRecord.Params) {
+        if (busy) return
+        busy = true
+        var status: TextView? = null
+        var mic: TextView? = null
+        scrollPage {
+            text("Play and record", 24f, bold = true)
+            mic = text("● Mic is on", 16f, bold = true, color = Color.RED)
+            text("Run: ${p.id}", 13f, color = Color.LTGRAY)
+            text("Sound: ${p.spec ?: p.file ?: "none (listen only)"}", 13f, color = Color.LTGRAY)
+            status = text("Starting...", 16f, color = Color.rgb(255, 200, 0))
+        }
+        Thread {
+            val res = try { PlayRecord(this, p) { s -> runOnUiThread { status?.text = s } }.run() }
+                      catch (e: Throwable) {
+                          val msg = "FAILED: ${e.javaClass.simpleName} ${e.message}"
+                          Results.saveText(this, "${p.id}.json", Json().put("id", p.id).put("error", msg).toString())
+                          msg
+                      }
+            busy = false
+            runOnUiThread { mic?.text = "Mic is off"; mic?.setTextColor(Color.LTGRAY); status?.text = "Done.\n$res" }
+        }.start()
+    }
+}
