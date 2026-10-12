@@ -14,6 +14,7 @@ import argparse
 import datetime as dt
 import json
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -395,15 +396,17 @@ def link_words(info, A, B):
     q = info["quality"]
     name = {"A_hears_A": f"{A} hears itself", "A_hears_B": f"{A} hears {B}",
             "B_hears_B": f"{B} hears itself", "B_hears_A": f"{B} hears {A}"}
-    return ", ".join(f"{name[k]} {v:.0f}x{'' if v >= pair.HEARD else ' (TOO WEAK)'}" for k, v in q.items())
+    out = ", ".join(f"{name[k]} {v:.0f}x{'' if v >= pair.HEARD else ' (TOO WEAK)'}" for k, v in q.items())
+    extra = [x for x in info.get("not_heard", []) if x.startswith("gaps")]
+    return out + ("; REJECTED: " + extra[0] if extra else "")
 
 
 def pair_round(s, a, b, specA, specB, va, vb):
     """One round: B (late player) starts first because an adb start takes ~1 s (MEASURED: the first
     real try had the recordings miss each other), A plays ~0.6 s after its start, B ~3.5 s after its."""
     ia, ib = s.rid("pairA"), s.rid("pairB")
-    phone.start(b, "play-record", ib, spec=specB, vol=vb, pre=3500, post=1000)
-    phone.start(a, "play-record", ia, spec=specA, vol=va, pre=600, post=4500)
+    phone.start_together([(b, "play-record", ib, dict(spec=specB, vol=vb, pre=3500, post=1000)),
+                          (a, "play-record", ia, dict(spec=specA, vol=va, pre=600, post=4500))])
     for ser, rid in ((a, ia), (b, ib)):
         phone.wait_for(ser, f"{rid}.json", 60)
         phone.pull(ser, rid, s.src)
@@ -458,7 +461,7 @@ def task4c(args):
         results.append(d)
         s.say(f"- round {rnd+1}: " + (f"{d*100:.1f} cm (MEASURED; self speaker-mic assumed 10 cm each, UNCONFIRMED); "
               f"{args.other} answered {(t['tAB'] - t['tAA']) / RATE * 1000:.0f} ms after {args.phone}'s sound" if d is not None
-              else "NO DISTANCE - not clearly heard: " + link_words(t, args.phone, args.other)))
+              else "NO DISTANCE - " + link_words(t, args.phone, args.other)))
     ok = [d for d in results if d is not None]
     if ok:
         s.say(f"- spread over {len(ok)} rounds: {np.std(ok)*100:.1f} cm")
@@ -662,23 +665,42 @@ def task5h(args):
         early, late = (a, ia, specA, va), (b, ib, specB, vb)
         if rnd % 2:   # swap roles every round
             early, late = late, early
-        # late player starts first (adb start takes ~1 s), see task4c
-        phone.start(late[0], "play-record", late[1], spec=late[2], vol=late[3], pre=3500, post=1000)
-        phone.start(early[0], "play-record", early[1], spec=early[2], vol=early[3], pre=600, post=4500)
+        phone.start_together([(late[0], "play-record", late[1], dict(spec=late[2], vol=late[3], pre=3500, post=1000)),
+                              (early[0], "play-record", early[1], dict(spec=early[2], vol=early[3], pre=600, post=4500))])
         for ser, rid in ((a, ia), (b, ib)):
             phone.wait_for(ser, f"{rid}.json", 60)
             phone.pull(ser, rid, s.src)
         e_rec, l_rec = analysis.mono(phone.Run(s.src, early[1]).rec), analysis.mono(phone.Run(s.src, late[1]).rec)
-        d, _ = pair.distance(e_rec, l_rec, signals.reference(early[2]), signals.reference(late[2]), RATE, 0.1, 0.1, gap_s=0.4)
+        d, info = pair.distance(e_rec, l_rec, signals.reference(early[2]), signals.reference(late[2]), RATE, 0.1, 0.1, gap_s=0.4)
+        first = args.phone if early[0] == a else args.other
         if d is not None:
             est.append(d)
         cur = float(np.median(est)) if est else None
-        s.say(f"- round {rnd+1}: {('%.1f cm' % (d*100)) if d else 'not found'}; running estimate {('%.1f cm' % (cur*100)) if cur else '-'}")
-        if prev is not None and cur is not None and len(est) >= 4 and abs(cur - prev) < 0.005:
+        s.say(f"- round {rnd+1} ({first} first): {('%.1f cm' % (d*100)) if d is not None else 'NO DISTANCE - ' + link_words(info, 'first', 'second')}; "
+              f"running estimate {('%.1f cm' % (cur*100)) if cur else '-'}")
+        if prev is not None and cur is not None and len(est) >= 4 and rnd >= 3 and abs(cur - prev) < 0.005:
             s.say("- estimate stopped changing (under 0.5 cm): done ('listening... clearer...')")
             break
         prev = cur
     s.save()
+
+
+CHIME = "tone,f=880,ms=250,db=-15+tone,f=660,ms=400,at=320,db=-15"
+
+
+def chime():
+    """'Done' ding-dong on the 8T (founder steps away during tests). Audible on purpose; the app puts
+    the owner's volume back afterwards."""
+    try:
+        d = phone.devices()
+        ser = d.get("8T") or next(iter(d.values()), None)
+        if ser:
+            rid = "chime_" + dt.datetime.now().strftime("%H%M%S")
+            phone.start(ser, "play-record", rid, spec=CHIME, vol=12, pre=100, post=100)
+            phone.wait_for(ser, f"{rid}.json", 30)
+            phone.adb(ser, "shell", f"rm -f {phone.REMOTE}/{rid}*", check=False)
+    except Exception:
+        pass
 
 
 def main(argv=None):
@@ -689,6 +711,8 @@ def main(argv=None):
     ap.add_argument("--step", default=None)
     ap.add_argument("--angle", type=int, default=0)
     ap.add_argument("--root", default=str(DRIVE))
+    ap.add_argument("--wait", type=int, default=0, help="seconds to wait first, so the founder can step away")
+    ap.add_argument("--no-chime", action="store_true", help="don't play the 'done' ding-dong on the 8T")
     args = ap.parse_args(argv)
     if args.task in ("task4c", "task5f", "task5h") and not args.other:
         args.other = "8T" if args.phone == "POCO" else "POCO"
@@ -704,9 +728,13 @@ def main(argv=None):
     # The app sets a quiet test volume; put the founder's own volume back afterwards.
     serials = [phone.serial_of(n) for n in (args.phone, args.other) if n and n in phone.devices()]
     before = {sr: phone.get_volume(sr) for sr in serials}
+    if args.wait:
+        time.sleep(args.wait)
     try:
         tasks[args.task](args)
     finally:
+        if not args.no_chime:
+            chime()
         for sr, v in before.items():
             if v is not None:
                 phone.set_volume(sr, v)

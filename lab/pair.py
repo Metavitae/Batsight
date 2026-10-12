@@ -37,6 +37,9 @@ def _first(rec, ref, start=0, stop=None, rate=48000):
 HEARD = 6.0   # a partner sound counts as heard only if it stands 6x above the background
 
 
+MAX_M = 10.0  # sanity limit: phones farther apart than this can't be told from a stray sound
+
+
 def distance(recA, recB, refA, refB, rate, self_A=0.0, self_B=0.0, gap_s=None):
     """gap_s: B is known to play at least gap_s after A. Then B's sound is only searched for after A's
     own sound in A's recording, and A's sound only before B's own in B's recording, so a phone's own
@@ -55,6 +58,13 @@ def distance(recA, recB, refA, refB, rate, self_A=0.0, self_B=0.0, gap_s=None):
     # Confirmation check: no distance unless all four sounds were clearly heard.
     if None in (tAA, tBB, tAB, tBA) or min(q.values()) < HEARD:
         info["not_heard"] = [k for k, v in q.items() if v < HEARD]
+        return None, info
+    # Sanity check (no clocks needed): the gap between the two sounds must look the same to both
+    # phones, give or take the travel time there and back. A stray sound (seen on the real phones:
+    # three 12-15 kHz pulses neither app played) breaks this and is rejected.
+    mismatch = abs((tAB - tAA) - (tBB - tBA)) / rate
+    if mismatch > 2 * MAX_M / C:
+        info["not_heard"] = [f"gaps disagree by {mismatch*1000:.0f} ms (a stray sound?)"]
         return None, info
     d = C / 2 * ((tAB - tAA) - (tBB - tBA)) / rate + (self_A + self_B) / 2
     return float(d), info

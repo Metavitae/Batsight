@@ -90,6 +90,18 @@ def start(serial, mode, run_id, **extras):
     adb(serial, "shell", " ".join(shlex.quote(p) for p in parts))
 
 
+def start_together(jobs):
+    """Start several phones at the same moment (threads). jobs = [(serial, mode, run_id, extras)].
+    One-after-the-other starts were too fragile: on the real 8T one start took over 4 s and the two
+    recordings missed each other."""
+    import threading
+    th = [threading.Thread(target=start, args=(ser, mode, rid), kwargs=ex) for ser, mode, rid, ex in jobs]
+    for t in th:
+        t.start()
+    for t in th:
+        t.join()
+
+
 def wait_for(serial, name, timeout=120):
     end = time.time() + timeout
     while time.time() < end:

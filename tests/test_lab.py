@@ -218,3 +218,23 @@ def test_decay_time_ignores_noise_floor():
     rng = np.random.default_rng(2)
     env = np.exp(-6.9 * t / 0.4) * rng.normal(size=len(t)) + 10 ** (-40 / 20) * rng.normal(size=len(t))
     assert echo.decay_time(env, rate) == pytest.approx(0.4, abs=0.08)
+
+
+def test_pair_distance_rejects_stray_sound():
+    from lab import pair
+    rng = np.random.default_rng(3)
+    A = signals.reference("chirp,f0=12000,f1=15000,ms=100,db=-10")
+    B = signals.reference("chirp,f0=15000,f1=12000,ms=100,db=-10")
+    def put(x, ref, at, g):
+        x[at:at + len(ref)] += g * ref
+    n = 5 * RATE
+    d_frames = int(0.3 / C * RATE)                       # phones 30 cm apart
+    recA = rng.normal(0, 1e-4, n); recB = rng.normal(0, 1e-4, n)
+    put(recA, A, 30000, 1.0); put(recB, A, 20000 + d_frames, 0.3)      # A plays, both hear
+    put(recB, B, 150000, 1.0); put(recA, B, 160000 + d_frames, 0.3)    # B plays 2.7 s later
+    d, _ = pair.distance(recA, recB, A, B, RATE, gap_s=0.4)
+    assert d == pytest.approx(0.3, abs=0.02)
+    recA2 = recA.copy(); recA2[160000:] = rng.normal(0, 1e-4, n - 160000)
+    put(recA2, B, 60000, 0.3)                                         # a stray "B" sound, wrong time
+    d2, info = pair.distance(recA2, recB, A, B, RATE, gap_s=0.4)
+    assert d2 is None and "gaps disagree" in info["not_heard"][0]
