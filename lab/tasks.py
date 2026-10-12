@@ -19,7 +19,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import C, analysis, dsp, echo, pair, phone, remix, signals, solver, wavio
+from . import C, analysis, dsp, echo, pair, phone, remix, signals, solver, sounds, wavio
 
 DRIVE = Path("/mnt/chromeos/shared/GoogleDrive/MyDrive/One_ring/03_Projects/The Batsight")
 RATE = 48000
@@ -410,21 +410,65 @@ def watch_timeline(s, res, every):
 
 def task_watch(args):
     """Rhythmic chirps for about a minute (founder's idea): does it flag each entrance/exit and
-    settle again afterwards? Ding-dong at the start and at the end."""
-    s = Session(args.root, f"watch_{args.phone}")
+    settle again afterwards? Ding-dong at the start and at the end.
+    --sound chirp (default, the wide chirp) or warp_hyper (founder's space sounds, alternating)."""
+    s = Session(args.root, f"watch_{args.phone}_{args.sound}")
     serial = phone.serial_of(args.phone)
     vol = find_level(s, args.root, args.phone, serial)
     every = 150
     secs = int(args.angle) if args.angle else 60          # --angle doubles as length in seconds here
-    spec = WIDE.get(args.phone, ping_of(args.phone)) + ECHO_BOOST + f",count={secs * 1000 // every},every={every}"
-    s.say(f"# The Batsight - rhythmic watch - {args.phone}, {secs} s\n")
-    s.say(f"Chirp: `{spec}` (one every {every} ms). Ding-dong at the start and at the end.")
-    chime()
-    r = run(s, serial, "watch", spec=spec, vol=vol, pre=300, post=300)
-    profs, _, _ = echo.profiles(analysis.mono(r.rec), signals.reference(spec), signals.ping_starts(spec), RATE, max_m=4.0)
-    np.save(s.work / "watch_profiles.npy", profs)
-    watch_timeline(s, echo.watch(profs, RATE, every / 1000), every)
+    count = secs * 1000 // every
+    s.say(f"# The Batsight - rhythmic watch - {args.phone}, {secs} s, sound '{args.sound}'\n")
+    if args.sound == "chirp":
+        spec = WIDE.get(args.phone, ping_of(args.phone)) + ECHO_BOOST + f",count={count},every={every}"
+        s.say(f"Chirp: `{spec}` (one every {every} ms). Ding-dong at the start and at the end.")
+        if not args.dry:
+            chime()
+        r = run(s, serial, "watch", spec=spec, vol=0 if args.dry else vol, pre=300, post=300)
+        if args.dry:
+            return dry_report(s, r)
+        streams = {"chirp": echo.profiles(analysis.mono(r.rec), signals.reference(spec), signals.ping_starts(spec),
+                                          RATE, max_m=4.0)[0]}
+        every_stream = {"chirp": every}
+    else:
+        names = ["warp_rise", "hyperspace_v"]
+        x, starts, snd = sounds.train(names, every, count)
+        fname = f"watch_{dt.datetime.now():%H%M%S}.wav"
+        local = s.work / fname
+        wavio.write(local, x, RATE)
+        phone.push_signal(serial, local)
+        s.say(f"Sounds: {' / '.join(names)} alternating, one every {every} ms (file {fname}). Ding-dong at start and end.")
+        if not args.dry:
+            chime()
+        r = run(s, serial, "watch", file=fname, vol=0 if args.dry else vol, pre=300, post=300)
+        if args.dry:
+            return dry_report(s, r)
+        streams, every_stream = {}, {}
+        for nm in names:
+            streams[nm] = echo.profiles(analysis.mono(r.rec), snd[nm], starts[nm], RATE, max_m=4.0)[0]
+            every_stream[nm] = every * len(names)
+    merged = None
+    for nm, profs in streams.items():
+        np.save(s.work / f"watch_{nm}_profiles.npy", profs)
+        res = echo.watch(profs, RATE, every_stream[nm] / 1000)
+        # spread each stream back onto the common chirp clock
+        step = every_stream[nm] // every
+        full = []
+        for x_ in res:
+            full += [x_] * step
+        merged = full if merged is None else [max(a, b, key=lambda z: RANK[z[0]]) for a, b in zip(merged, full)]
+    watch_timeline(s, merged, every)
     s.save()
+
+
+def dry_report(s, r):
+    s.say(f"- DRY RUN at volume 0 (nothing audible): recorded {r.rec.shape[0] / RATE:.1f} s, "
+          f"played file {r.played.shape[0] / RATE if r.played is not None else 0:.1f} s, volume during run {r.meta['volume']}, "
+          f"notes {r.meta.get('notes')} (MEASURED)")
+    s.save()
+
+
+RANK = {"still": 0, "CHANGED": 1, "ADOPTED": 2, "MOVING": 3}
 
 
 def describe_states(s, st, env):
@@ -797,6 +841,8 @@ def main(argv=None):
     ap.add_argument("--root", default=str(DRIVE))
     ap.add_argument("--wait", type=int, default=0, help="seconds to wait first, so the founder can step away")
     ap.add_argument("--no-chime", action="store_true", help="don't play the 'done' ding-dong on the 8T")
+    ap.add_argument("--sound", default="chirp", help="watch: chirp or warp_hyper")
+    ap.add_argument("--dry", action="store_true", help="watch: run at volume 0 (silent check)")
     args = ap.parse_args(argv)
     if args.task in ("task4c", "task5f", "task5h") and not args.other:
         args.other = "8T" if args.phone == "POCO" else "POCO"

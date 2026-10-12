@@ -6,6 +6,8 @@ import subprocess
 import time
 from pathlib import Path
 
+import numpy as np
+
 from . import wavio
 
 PKG = "com.metavitae.soundlab"
@@ -101,6 +103,8 @@ def check_safe(spec):
 def start(serial, mode, run_id, **extras):
     if extras.get("spec"):
         check_safe(extras["spec"])
+    if extras.get("file") and extras["file"] not in _CHECKED:
+        raise SystemExit(f"refused: sound file {extras['file']} was not safety-checked (use push_signal)")
     parts = ["am", "start", "-S", "-n", f"{PKG}/.MainActivity", "--es", "mode", mode, "--es", "id", run_id]
     for k, v in extras.items():
         if v is None:
@@ -151,7 +155,30 @@ def pull(serial, run_id, dest, delete=True):
     return [dest / (n[:-4] if n.endswith((".json.txt", ".csv.txt")) else n) for n in names]
 
 
+_CHECKED = set()   # sound files that passed check_safe_wav (start() refuses any other file)
+
+
+def check_safe_wav(path):
+    """Same 'never hurtful' rule for a sound FILE: every separate sound in it must peak at or below
+    MAX_DB and last at most MAX_MS, unless it is at or below LONG_MAX_DB."""
+    x, rate = wavio.read(path)
+    x = np.asarray(x, dtype=np.float64)
+    x = x[:, None] if x.ndim == 1 else x
+    peak = 20 * np.log10(np.abs(x).max() + 1e-20)
+    if peak > MAX_DB + 0.1:
+        raise SystemExit(f"refused by the safety rule: {Path(path).name} peaks at {peak:.1f} dB (max {MAX_DB})")
+    from . import analysis
+    for c in range(x.shape[1]):
+        for a, b in analysis.bursts(x[:, c], rate):
+            ms = (b - a) / rate * 1000
+            bp = 20 * np.log10(np.abs(x[a:b, c]).max() + 1e-20)
+            if ms > MAX_MS + 0.5 and bp > LONG_MAX_DB:
+                raise SystemExit(f"refused by the safety rule: {Path(path).name} has a {ms:.0f} ms sound at {bp:.1f} dB")
+    _CHECKED.add(Path(path).name)
+
+
 def push_signal(serial, wav_path):
+    check_safe_wav(wav_path)
     adb(serial, "shell", "mkdir", "-p", SIGNALS, check=False)
     adb(serial, "push", str(wav_path), f"{SIGNALS}/{Path(wav_path).name}", timeout=120)
 

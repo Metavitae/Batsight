@@ -277,3 +277,12 @@ def test_diamond_halves_are_safe_and_separable():
     d = sounds.diamond()
     assert d.shape[1] == 2 and len(d) / RATE <= 0.1 and 20 * np.log10(np.abs(d).max()) <= -19.9
     assert sounds.cross_db(d[:, 0], d[:, 1]) < -40
+
+
+def test_sound_file_safety(tmp_path):
+    from lab import phone, sounds
+    x, _, _ = sounds.train(["warp_rise", "hyperspace_v"], 150, 6)
+    ok = tmp_path / "ok.wav"; wavio.write(ok, x, RATE); phone.check_safe_wav(ok)
+    loud = tmp_path / "loud.wav"; wavio.write(loud, x * 10, RATE)
+    with pytest.raises(SystemExit, match="safety rule"):
+        phone.check_safe_wav(loud)

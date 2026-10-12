@@ -164,3 +164,20 @@ def sharpness(x, rate=RATE):
     on = f[X >= X.max() / 100]
     return {"blur_cm": float(blur_cm), "ghost_db": ghost_db,
             "band_khz": (float(on.min() / 1000), float(on.max() / 1000)), "ms": len(x) / rate * 1000}
+
+
+def train(names, every_ms, count, rate=RATE, lead_ms=0):
+    """A rhythm of probe sounds cycling through `names` (e.g. ["warp_rise", "hyperspace_v"]).
+    Returns (stereo [frames, 2], {name: [start frames]}, {name: the sound itself})."""
+    snd = {n: SOUNDS[n](rate) for n in names}
+    n_every = int(every_ms / 1000 * rate)
+    lead = int(lead_ms / 1000 * rate)
+    longest = max(len(v) for v in snd.values())
+    x = np.zeros(lead + n_every * count + longest)
+    starts = {n: [] for n in names}
+    for i in range(count):
+        nm = names[i % len(names)]
+        k = lead + i * n_every
+        x[k:k + len(snd[nm])] += snd[nm]
+        starts[nm].append(k)
+    return np.stack([x, x], axis=1), starts, snd

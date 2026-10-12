@@ -28,10 +28,18 @@ class FakeWorld:
         monkeypatch.setattr(phone, "pull", self.pull)
         monkeypatch.setattr(phone, "max_volume", lambda serial: 10)
         monkeypatch.setattr(phone, "trigger", lambda serial, run_id, what: None)
+        self.files = {}
+
+        def push(serial, path):
+            phone.check_safe_wav(path)
+            self.files[Path(path).name] = wavio.read(path)[0]
+        monkeypatch.setattr(phone, "push_signal", push)
 
     def start(self, serial, mode, run_id, **opts):
         if opts.get("spec"):
             phone.check_safe(opts["spec"])      # every task's sounds must pass the safety rule
+        if opts.get("file") and opts["file"] not in phone._CHECKED:
+            raise SystemExit("refused: unchecked sound file")
         self.pending[run_id] = (serial, mode, opts)
 
     @staticmethod
@@ -60,6 +68,8 @@ class FakeWorld:
         post = (5000 - pre) if opts.get("armed") else opts.get("post", 500)   # armed: records until 'stop'
         rec_len = int((pre + opts.get("delay", 0) + post) / 1000 * RATE)
         played = signals.build(opts["spec"], RATE) if opts.get("spec") else None
+        if opts.get("file"):
+            played = self.files[opts["file"]]
         if played is not None and opts.get("swap"):
             played = played[:, ::-1]
         ch = opts.get("ch", 1)
