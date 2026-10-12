@@ -447,8 +447,8 @@ def task4c(args):
     s.say(f"# The Batsight - Task 4c - two-phone round trip, no shared clock - {args.phone} and {args.other}\n")
     s.say("Measure the distance between the two phones with a tape first and write it here: ____ cm")
     # 12-15 kHz: the POCO's mic stops near 15.5 kHz (MEASURED 2026-10-12), so 16-20 kHz can't link
-    # the two phones. Up-sweep vs down-sweep tells the two sounds apart. May be faintly audible.
-    specA, specB = "chirp,f0=12000,f1=15000,ms=20,db=-30", "chirp,f0=15000,f1=12000,ms=20,db=-30"
+    # the two phones. Up-sweep vs down-sweep tells the two sounds apart. 100 ms (founder 2026-10-12): 20 ms was too weak for the POCO to hear the 8T.
+    specA, specB = "chirp,f0=12000,f1=15000,ms=100,db=-30", "chirp,f0=15000,f1=12000,ms=100,db=-30"
     va, vb = link_check(s, a, b, args.phone, args.other, specA, specB, va, vb)
     results = []
     for rnd in range(5):
@@ -619,8 +619,8 @@ def task5h(args):
     a, b = phone.serial_of(args.phone), phone.serial_of(args.other)
     va, vb = load_levels(args.root).get(args.phone, 3), load_levels(args.root).get(args.other, 3)
     # 12-15 kHz: the POCO's mic stops near 15.5 kHz (MEASURED 2026-10-12), so 16-20 kHz can't link
-    # the two phones. Up-sweep vs down-sweep tells the two sounds apart. May be faintly audible.
-    specA, specB = "chirp,f0=12000,f1=15000,ms=20,db=-30", "chirp,f0=15000,f1=12000,ms=20,db=-30"
+    # the two phones. Up-sweep vs down-sweep tells the two sounds apart. 100 ms (founder 2026-10-12): 20 ms was too weak for the POCO to hear the 8T.
+    specA, specB = "chirp,f0=12000,f1=15000,ms=100,db=-30", "chirp,f0=15000,f1=12000,ms=100,db=-30"
     va, vb = link_check(s, a, b, args.phone, args.other, specA, specB, va, vb)
     est, prev = [], None
     for rnd in range(12):
