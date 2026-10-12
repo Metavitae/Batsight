@@ -93,3 +93,8 @@ def test_task5g_map(world, tmp_path):
 
 def test_task5h(world, tmp_path):
     assert "running estimate" in go(tmp_path, "task5h")
+
+
+def test_watch_runs(world, tmp_path):
+    rep = go(tmp_path, "watch", "--phone", "8T", "--angle", "10")
+    assert "Timeline" in rep and ("still" in rep or "MOVING" in rep)

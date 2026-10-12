@@ -394,6 +394,35 @@ def task_look(args):
     s.save()
 
 
+def task_watch(args):
+    """Rhythmic chirps for about a minute (founder's idea): does it flag each entrance/exit and
+    settle again afterwards? Ding-dong at the start and at the end."""
+    s = Session(args.root, f"watch_{args.phone}")
+    serial = phone.serial_of(args.phone)
+    vol = find_level(s, args.root, args.phone, serial)
+    every = 150
+    secs = int(args.angle) if args.angle else 60          # --angle doubles as length in seconds here
+    spec = WIDE.get(args.phone, ping_of(args.phone)) + ECHO_BOOST + f",count={secs * 1000 // every},every={every}"
+    s.say(f"# The Batsight - rhythmic watch - {args.phone}, {secs} s\n")
+    s.say(f"Chirp: `{spec}` (one every {every} ms). Ding-dong at the start and at the end.")
+    chime()
+    r = run(s, serial, "watch", spec=spec, vol=vol, pre=300, post=300)
+    profs, _, _ = echo.profiles(analysis.mono(r.rec), signals.reference(spec), signals.ping_starts(spec), RATE, max_m=4.0)
+    np.save(s.work / "watch_profiles.npy", profs)
+    res = echo.watch(profs, RATE, every / 1000)
+    s.say(f"- {len(profs)} chirps analysed (MEASURED). Timeline, one line per second:")
+    per = int(1000 / every)
+    for k in range(0, len(res), per):
+        blk = res[k:k + per]
+        mv = [x for x in blk if x[0]]
+        if mv:
+            where = np.median([x[1] for x in mv])
+            s.say(f"  {k * every / 1000:5.1f} s  MOVING  (biggest change around {where * 100:.0f} cm)")
+        else:
+            s.say(f"  {k * every / 1000:5.1f} s  still")
+    s.save()
+
+
 def describe_states(s, st, env):
     r = echo.range_axis(len(st), RATE)
     runs, cur = [], None
@@ -769,7 +798,7 @@ def main(argv=None):
         args.other = "8T" if args.phone == "POCO" else "POCO"
     tasks = {"task1": task1, "task2": task2, "task3": task3, "task5a": task3, "task5b": task3, "task4a": task4a,
              "task4c": task4c, "task5c": task5c, "task5d": task5d, "task5e": task5e, "task5f": task5f,
-             "task5g": task5g, "task5h": task5h, "look": task_look}
+             "task5g": task5g, "task5h": task5h, "look": task_look, "watch": task_watch}
     if args.task == "facts":
         s = Session(args.root, f"facts_{args.phone}")
         print(phone.facts(phone.serial_of(args.phone), s.rid("facts"), s.src))

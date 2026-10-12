@@ -229,3 +229,30 @@ def decay_time(env, rate, start_bin=0, smooth_ms=5.0):
     k = np.arange(i5[0], i25[0])
     slope = np.polyfit(k / rate, sch_db[k], 1)[0]
     return float(-60 / slope) if slope < 0 else None
+
+
+def watch(profs, rate, every_s, lo_m=0.3, hi_m=4.0, fast_n=4, slow_s=15.0, z=4.0, min_bins=8, still_n=20):
+    """Rhythmic 'watch' mode (founder's idea): a slow picture ('the room as usual', exponential
+    average over ~slow_s) and a fast one (last fast_n chirps). Where they differ by more than z x the
+    still-room noise in at least min_bins distances -> 'moving'. While moving, the slow picture is NOT
+    updated (so a passer-by doesn't get learned into the room); once still again it resumes, which
+    means something that stays (a chair moved) is slowly absorbed into the new 'usual'.
+    Returns per chirp: (moving?, distance of biggest change in m, number of changed distances)."""
+    r = range_axis(profs.shape[1], rate)
+    m = (r >= lo_m) & (r <= hi_m)
+    slow = profs[:still_n].mean(axis=0)
+    noise = np.sqrt((np.abs(profs[:still_n] - slow) ** 2).mean(axis=0)) + 1e-20
+    alpha = every_s / slow_s
+    out = []
+    for i in range(len(profs)):
+        if i < fast_n:
+            out.append((False, None, 0))
+            continue
+        fast = profs[i - fast_n + 1:i + 1].mean(axis=0)
+        ch = np.abs(fast - slow)[m] / (noise[m] / np.sqrt(fast_n) * np.sqrt(1 + fast_n / still_n))
+        big = int((ch > z).sum())
+        moving = big >= min_bins
+        out.append((moving, float(r[m][int(np.argmax(ch))]), big))
+        if not moving and i >= still_n:
+            slow = (1 - alpha) * slow + alpha * profs[i]
+    return out

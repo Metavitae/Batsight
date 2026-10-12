@@ -247,3 +247,13 @@ def test_safety_rule_refuses_loud_or_long_sounds():
     for bad in ("chirp,f0=8000,f1=15000,ms=100,db=-10", "tone,f=1000,ms=500,db=-20"):
         with pytest.raises(SystemExit, match="safety rule"):
             phone.check_safe(bad)
+
+
+def test_watch_flags_a_change_then_settles():
+    rng = np.random.default_rng(4)
+    room = np.zeros(300, complex); room[100] = 1.0; room[200] = 0.7
+    profs = room[None, :] + 0.05 * (rng.normal(size=(200, 300)) + 1j * rng.normal(size=(200, 300)))
+    profs[80:110, 150] += 0.8                         # someone passes at bin 150 for 30 chirps
+    res = echo.watch(profs, RATE, 0.15, lo_m=0.0, hi_m=10.0, min_bins=1)
+    flags = [x[0] for x in res]
+    assert not any(flags[25:75]) and all(flags[85:108]) and not any(flags[120:])
