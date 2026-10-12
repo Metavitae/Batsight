@@ -270,3 +270,10 @@ def test_space_sounds_are_safe_and_a_single_tone_is_blurry():
         assert len(x) / RATE <= 0.1 and 20 * np.log10(np.abs(x).max()) <= -19.9, name
     tone = np.sin(2 * np.pi * 8000 * np.arange(int(0.05 * RATE)) / RATE) * 0.1   # the classic 'ping'
     assert sounds.sharpness(tone)["blur_cm"] > 5 * sounds.sharpness(sounds.blaster_fall())["blur_cm"]
+
+
+def test_diamond_halves_are_safe_and_separable():
+    from lab import sounds
+    d = sounds.diamond()
+    assert d.shape[1] == 2 and len(d) / RATE <= 0.1 and 20 * np.log10(np.abs(d).max()) <= -19.9
+    assert sounds.cross_db(d[:, 0], d[:, 1]) < -40

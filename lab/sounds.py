@@ -98,6 +98,26 @@ def console_chirp(rate=RATE):
     return _norm(x, rate)
 
 
+def diamond(rate=RATE, center=8000, top=14500, bottom=3000, ms=100, stereo=True):
+    """'Diamond' (founder's idea: "coming and going... spreading out and bouncing back to center").
+    Swells in, starts at one middle pitch, splits: LEFT speaker rises to `top` and comes back,
+    RIGHT speaker falls to `bottom` and comes back; both meet again in the middle; fades out.
+    Returns [frames, 2] (left, right) if stereo, else the two summed."""
+    h = ms / 2
+    up = np.concatenate([_sweep(center, top, h, rate), _sweep(top, center, h, rate)])
+    dn = np.concatenate([_sweep(center, bottom, h, rate), _sweep(bottom, center, h, rate)])
+    env = np.sin(np.linspace(0, np.pi, len(up))) ** 0.7          # swell in, fade out
+    L, R = _norm(env * up, rate), _norm(env * dn, rate)
+    return np.stack([L, R], axis=1) if stereo else _norm(L + R, rate)
+
+
+def cross_db(a, b):
+    """How much sound b looks like sound a to a's echo filter (lower = easier to tell apart)."""
+    pa = np.abs(dsp.matched(np.concatenate([np.zeros(len(a)), a, np.zeros(len(a))]), a)).max()
+    pb = np.abs(dsp.matched(np.concatenate([np.zeros(len(b)), b, np.zeros(len(b))]), a)).max()
+    return float(dsp.db(pb / pa))
+
+
 SOUNDS = {"warp_rise": warp_rise, "blaster_fall": blaster_fall, "scanner_warble": scanner_warble,
           "hyperspace_v": hyperspace_v, "star_sparkle": star_sparkle, "console_chirp": console_chirp}
 
