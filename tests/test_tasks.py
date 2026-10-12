@@ -46,6 +46,12 @@ def test_task3_poco_narrow_ping_hand_at_1m(world, tmp_path):
     assert any(f"changed at {d} cm" in rep for d in range(96, 105)), rep
 
 
+def test_task4c_link_check_stops_deaf_pair(world, tmp_path):
+    world.pair_gain = 0.0
+    with pytest.raises(SystemExit, match="link check failed"):
+        go(tmp_path, "task4c")
+
+
 def test_task4c_pair(world, tmp_path):
     rep = go(tmp_path, "task4c")
     import re

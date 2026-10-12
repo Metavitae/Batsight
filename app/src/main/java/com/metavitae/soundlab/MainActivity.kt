@@ -139,8 +139,10 @@ class MainActivity : Activity() {
             status = text("Starting...", 16f, color = Color.rgb(255, 200, 0))
         }
         Thread {
-            val res = try { PlayRecord(this, p) { s -> runOnUiThread { status?.text = s } }.run() }
+            val job = PlayRecord(this, p) { s -> runOnUiThread { status?.text = s } }
+            val res = try { job.run() }
                       catch (e: Throwable) {
+                          job.restoreVolume()
                           val msg = "FAILED: ${e.javaClass.simpleName} ${e.message}"
                           Results.save(this, "${p.id}.json", "application/json", Json().put("id", p.id).put("error", msg).toString().toByteArray())
                           msg

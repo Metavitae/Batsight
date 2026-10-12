@@ -79,6 +79,15 @@ class PlayRecord(private val ctx: Context, private val p: Params, private val st
 
     @Volatile private var recording = true
 
+    /** Volume as the owner had it; put back after every run (the computer can't: Android ignores
+     *  'cmd media_session volume --set' on both test phones, MEASURED 2026-10-12). */
+    var volBefore = -1
+
+    fun restoreVolume() {
+        if (volBefore >= 0) (ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager)
+            .setStreamVolume(AudioManager.STREAM_MUSIC, volBefore, 0)
+    }
+
     fun run(): String {
         val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val notes = ArrayList<String>()
@@ -97,6 +106,7 @@ class PlayRecord(private val ctx: Context, private val p: Params, private val st
 
         // ---- volume
         val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        volBefore = am.getStreamVolume(AudioManager.STREAM_MUSIC)
         if (p.vol >= 0) am.setStreamVolume(AudioManager.STREAM_MUSIC, p.vol.coerceAtMost(maxVol), 0)
         val volNow = am.getStreamVolume(AudioManager.STREAM_MUSIC)
 
@@ -217,6 +227,7 @@ class PlayRecord(private val ctx: Context, private val p: Params, private val st
         val realRate = rec.sampleRate
         val realCh = rec.channelCount
         track?.stop(); track?.release()
+        restoreVolume()   // the owner's own volume back BEFORE the done-marker is written
         rec.release()
         keep.forEach { it.release() }
         if (p.motion) { sm.unregisterListener(listener); sensorThread?.quitSafely() }

@@ -389,6 +389,39 @@ def task4a(args):
     s.save()
 
 
+def link_words(info, A, B):
+    q = info["quality"]
+    name = {"A_hears_A": f"{A} hears itself", "A_hears_B": f"{A} hears {B}",
+            "B_hears_B": f"{B} hears itself", "B_hears_A": f"{B} hears {A}"}
+    return ", ".join(f"{name[k]} {v:.0f}x{'' if v >= pair.HEARD else ' (TOO WEAK)'}" for k, v in q.items())
+
+
+def pair_round(s, a, b, specA, specB, va, vb):
+    """One round: B (late player) starts first because an adb start takes ~1 s (MEASURED: the first
+    real try had the recordings miss each other), A plays ~0.6 s after its start, B ~3.5 s after its."""
+    ia, ib = s.rid("pairA"), s.rid("pairB")
+    phone.start(b, "play-record", ib, spec=specB, vol=vb, pre=3500, post=1000)
+    phone.start(a, "play-record", ia, spec=specA, vol=va, pre=600, post=4500)
+    for ser, rid in ((a, ia), (b, ib)):
+        phone.wait_for(ser, f"{rid}.json", 60)
+        phone.pull(ser, rid, s.src)
+    ra, rb = phone.Run(s.src, ia), phone.Run(s.src, ib)
+    return pair.distance(analysis.mono(ra.rec), analysis.mono(rb.rec), signals.reference(specA),
+                         signals.reference(specB), RATE, 0.1, 0.1, gap_s=0.4)
+
+
+def link_check(s, a, b, A, B, specA, specB, va, vb):
+    """Confirmation check before any two-phone test: one trial round must show each phone clearly
+    hearing the other. Otherwise stop, saying which direction failed."""
+    d, info = pair_round(s, a, b, specA, specB, va, vb)
+    s.say(f"- Link check: {link_words(info, A, B)} (MEASURED; needs {pair.HEARD:.0f}x)")
+    if d is None:
+        s.say("- LINK CHECK FAILED: the phones don't clearly hear each other. Test stopped; no distances reported.")
+        s.save()
+        raise SystemExit("link check failed: " + link_words(info, A, B))
+    s.say("- Link check passed.")
+
+
 def task4c(args):
     s = Session(args.root, "task4c_pair")
     a, b = phone.serial_of(args.phone), phone.serial_of(args.other)
@@ -400,20 +433,14 @@ def task4c(args):
     # 12-15 kHz: the POCO's mic stops near 15.5 kHz (MEASURED 2026-10-12), so 16-20 kHz can't link
     # the two phones. Up-sweep vs down-sweep tells the two sounds apart. May be faintly audible.
     specA, specB = "chirp,f0=12000,f1=15000,ms=20,db=-30", "chirp,f0=15000,f1=12000,ms=20,db=-30"
+    link_check(s, a, b, args.phone, args.other, specA, specB, va, vb)
     results = []
     for rnd in range(5):
-        ia, ib = s.rid("pairA"), s.rid("pairB")
-        phone.start(a, "play-record", ia, spec=specA, vol=va, pre=600, post=2200)
-        phone.start(b, "play-record", ib, spec=specB, vol=vb, pre=1800, post=800)
-        for ser, rid in ((a, ia), (b, ib)):
-            phone.wait_for(ser, f"{rid}.json", 60)
-            phone.pull(ser, rid, s.src)
-        ra, rb = phone.Run(s.src, ia), phone.Run(s.src, ib)
-        d, t = pair.distance(analysis.mono(ra.rec), analysis.mono(rb.rec), signals.reference(specA),
-                             signals.reference(specB), RATE, 0.1, 0.1, gap_s=0.4)
+        d, t = pair_round(s, a, b, specA, specB, va, vb)
         results.append(d)
-        s.say(f"- round {rnd+1}: {('%.1f cm' % (d*100)) if d is not None else 'not found'} (MEASURED; self speaker-mic assumed 10 cm each, UNCONFIRMED)"
-              + (f"; B answered {(t['tAB'] - t['tAA']) / RATE * 1000:.0f} ms after A's sound, as heard by A" if d is not None else ""))
+        s.say(f"- round {rnd+1}: " + (f"{d*100:.1f} cm (MEASURED; self speaker-mic assumed 10 cm each, UNCONFIRMED); "
+              f"{args.other} answered {(t['tAB'] - t['tAA']) / RATE * 1000:.0f} ms after {args.phone}'s sound" if d is not None
+              else "NO DISTANCE - not clearly heard: " + link_words(t, args.phone, args.other)))
     ok = [d for d in results if d is not None]
     if ok:
         s.say(f"- spread over {len(ok)} rounds: {np.std(ok)*100:.1f} cm")
@@ -578,19 +605,21 @@ def task5h(args):
     # 12-15 kHz: the POCO's mic stops near 15.5 kHz (MEASURED 2026-10-12), so 16-20 kHz can't link
     # the two phones. Up-sweep vs down-sweep tells the two sounds apart. May be faintly audible.
     specA, specB = "chirp,f0=12000,f1=15000,ms=20,db=-30", "chirp,f0=15000,f1=12000,ms=20,db=-30"
+    link_check(s, a, b, args.phone, args.other, specA, specB, va, vb)
     est, prev = [], None
     for rnd in range(12):
         ia, ib = s.rid("loopA"), s.rid("loopB")
-        first, second = (a, ia, specA, va, 600), (b, ib, specB, vb, 1800)
+        early, late = (a, ia, specA, va), (b, ib, specB, vb)
         if rnd % 2:   # swap roles every round
-            first, second = (a, ia, specA, va, 1800), (b, ib, specB, vb, 600)
-        for ser, rid, sp, v, pre in (first, second):
-            phone.start(ser, "play-record", rid, spec=sp, vol=v, pre=pre, post=3000 - pre)
+            early, late = late, early
+        # late player starts first (adb start takes ~1 s), see task4c
+        phone.start(late[0], "play-record", late[1], spec=late[2], vol=late[3], pre=3500, post=1000)
+        phone.start(early[0], "play-record", early[1], spec=early[2], vol=early[3], pre=600, post=4500)
         for ser, rid in ((a, ia), (b, ib)):
             phone.wait_for(ser, f"{rid}.json", 60)
             phone.pull(ser, rid, s.src)
-        d, _ = pair.distance(analysis.mono(phone.Run(s.src, ia).rec), analysis.mono(phone.Run(s.src, ib).rec),
-                             signals.reference(specA), signals.reference(specB), RATE, 0.1, 0.1, gap_s=0.4)
+        e_rec, l_rec = analysis.mono(phone.Run(s.src, early[1]).rec), analysis.mono(phone.Run(s.src, late[1]).rec)
+        d, _ = pair.distance(e_rec, l_rec, signals.reference(early[2]), signals.reference(late[2]), RATE, 0.1, 0.1, gap_s=0.4)
         if d is not None:
             est.append(d)
         cur = float(np.median(est)) if est else None

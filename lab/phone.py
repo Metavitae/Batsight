@@ -51,6 +51,7 @@ def get_volume(serial):
 
 
 def set_volume(serial, step):
+    """NOTE: both test phones IGNORE this (MEASURED 2026-10-12); the app restores the volume itself."""
     adb(serial, "shell", "cmd", "media_session", "volume", "--stream", "3", "--set", str(step), check=False)
 
 

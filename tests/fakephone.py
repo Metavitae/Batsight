@@ -16,6 +16,7 @@ class FakeWorld:
         self.echoes = list(echoes)
         self.lowpass = lowpass
         self.pair_distance = pair_distance
+        self.pair_gain = 1.0   # 0 = the phones can't hear each other
         self.pending = {}        # serial -> (run_id, opts)
         self.n = 0
 
@@ -63,7 +64,7 @@ class FakeWorld:
         for prid, popts in players:
             if prid == rid:
                 continue
-            p = signals.build(popts["spec"], RATE) * 0.3
+            p = signals.build(popts["spec"], RATE) * 0.3 * self.pair_gain
             k = int(popts.get("pre", 500) / 1000 * RATE + self.pair_distance / C * RATE)
             seg = p[:, 0] + p[:, 1]
             end = min(len(y), k + len(seg))

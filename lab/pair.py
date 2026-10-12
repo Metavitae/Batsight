@@ -17,11 +17,24 @@ def _arrival(rec, ref, exclude=None, guard=0):
     return dsp.first_arrival(env), env
 
 
-def _first(rec, ref, start=0, stop=None):
+def _first(rec, ref, start=0, stop=None, rate=48000):
+    """First arrival of ref in rec[start:stop] and how clearly it stands out (peak / background)."""
     env = np.abs(dsp.matched(rec, ref))
     start = max(0, int(start))
-    stop = None if stop is None else max(start + 1, int(stop))
-    return dsp.first_arrival(env, start=start, stop=stop)
+    stop = len(env) if stop is None else max(start + 1, min(len(env), int(stop)))
+    t = dsp.first_arrival(env, start=start, stop=stop)
+    if t is None:
+        return None, 0.0
+    seg = env[start:stop].copy()
+    k = int(round(t)) - start
+    w = int(0.02 * rate)
+    peak = float(env[int(round(t))])
+    seg[max(0, k - w):k + w] = 0
+    bg = float(np.sqrt(np.mean(seg ** 2))) + 1e-20
+    return t, peak / bg
+
+
+HEARD = 6.0   # a partner sound counts as heard only if it stands 6x above the background
 
 
 def distance(recA, recB, refA, refB, rate, self_A=0.0, self_B=0.0, gap_s=None):
@@ -30,16 +43,18 @@ def distance(recA, recB, refA, refB, rate, self_A=0.0, self_B=0.0, gap_s=None):
     loud sound can't be mistaken for the other's quieter one (the real phones are 20-30 dB apart)."""
     recA = np.asarray(recA, dtype=np.float64)
     recB = np.asarray(recB, dtype=np.float64)
-    tAA = _first(recA, refA)
-    tBB = _first(recB, refB)
+    (tAA, qAA), (tBB, qBB) = _first(recA, refA, rate=rate), _first(recB, refB, rate=rate)
     if gap_s is None or tAA is None or tBB is None:
-        tAB = _first(recA, refB)
-        tBA = _first(recB, refA)
+        (tAB, qAB), (tBA, qBA) = _first(recA, refB, rate=rate), _first(recB, refA, rate=rate)
     else:
         g = int(gap_s * rate)
-        tAB = _first(recA, refB, start=tAA + g)
-        tBA = _first(recB, refA, stop=tBB - g)
-    if None in (tAA, tBB, tAB, tBA):
-        return None, dict(tAA=tAA, tAB=tAB, tBA=tBA, tBB=tBB)
+        tAB, qAB = _first(recA, refB, start=tAA + g, rate=rate)
+        tBA, qBA = _first(recB, refA, stop=tBB - g, rate=rate)
+    q = dict(A_hears_A=qAA, A_hears_B=qAB, B_hears_B=qBB, B_hears_A=qBA)
+    info = dict(tAA=tAA, tAB=tAB, tBA=tBA, tBB=tBB, quality=q)
+    # Confirmation check: no distance unless all four sounds were clearly heard.
+    if None in (tAA, tBB, tAB, tBA) or min(q.values()) < HEARD:
+        info["not_heard"] = [k for k, v in q.items() if v < HEARD]
+        return None, info
     d = C / 2 * ((tAB - tAA) - (tBB - tBA)) / rate + (self_A + self_B) / 2
-    return float(d), dict(tAA=tAA, tAB=tAB, tBA=tBA, tBB=tBB)
+    return float(d), info
