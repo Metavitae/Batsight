@@ -261,3 +261,12 @@ def test_watch_flags_a_change_then_settles():
     assert set(st[25:75]) == {"still"}
     assert st[90:105].count("MOVING") >= 10
     assert "ADOPTED" in st[140:175] and set(st[180:]) == {"still"}      # the open door becomes the usual
+
+
+def test_space_sounds_are_safe_and_a_single_tone_is_blurry():
+    from lab import sounds
+    for name, fn in sounds.SOUNDS.items():
+        x = fn()
+        assert len(x) / RATE <= 0.1 and 20 * np.log10(np.abs(x).max()) <= -19.9, name
+    tone = np.sin(2 * np.pi * 8000 * np.arange(int(0.05 * RATE)) / RATE) * 0.1   # the classic 'ping'
+    assert sounds.sharpness(tone)["blur_cm"] > 5 * sounds.sharpness(sounds.blaster_fall())["blur_cm"]
