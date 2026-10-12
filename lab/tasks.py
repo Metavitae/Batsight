@@ -71,17 +71,24 @@ def run(s, serial, tag, **opts):
     return phone.play_record(serial, rid, s.src, **opts)
 
 
-def direct_snr(r, ref):
-    """How far the direct ping stands above the recording's quiet parts (dB)."""
-    env = np.abs(dsp.matched(analysis.mono(r.rec), ref))
-    return float(dsp.db(env.max() / (np.median(env) + 1e-20)))
+def direct_snr(r, ref=None):
+    """How far the direct pings stand above the recording's quiet parts (dB). Every ping must be
+    found at its own spacing; if not all of them stand out, the answer is 0 (not heard)."""
+    if np.abs(r.rec).max() == 0:
+        return 0.0                      # digital silence (e.g. a source that mutes everything)
+    pl = r.played
+    col = pl[:, int(np.argmax(np.abs(pl).max(axis=0)))]
+    t = analysis.ping_train(r.rec, col, RATE)
+    if t is None or t["heard"] < t["count"]:
+        return 0.0
+    return t["snr_db"]
 
 
 # --------------------------------------------------------------------------- level
 
 def find_level(s, root, name, serial):
     """Start at the lowest volume and go up one step at a time until the direct ping is clearly
-    heard (25 dB above the quiet parts), never above LEVEL_CAP of the maximum."""
+    heard (20 dB above the quiet parts), never above LEVEL_CAP of the maximum."""
     known = load_levels(root).get(name)
     if known is not None:
         s.say(f"- Volume for {name}: step {known} (found earlier, phone_levels.json)")
@@ -95,7 +102,7 @@ def find_level(s, root, name, serial):
             r = run(s, serial, "level", spec=spec, vol=v)
         snr = direct_snr(r, ref)
         s.say(f"  volume step {v}/{vmax}: ping {snr:.1f} dB above the quiet parts")
-        if snr >= 25:
+        if snr >= 20:
             save_level(root, name, v)
             s.say(f"- Volume for {name}: step {v} of {vmax} (MEASURED: lowest step that gives a clear ping)")
             return v
@@ -155,7 +162,12 @@ def task1(args):
     for src in ("unprocessed", "mic", "voice_recognition", "camcorder", "voice_communication"):
         try:
             r = run(s, serial, f"src_{src}", spec=spec, vol=vol, source=src)
-            s.say(f"- {src}: ping {direct_snr(r, signals.reference(spec)):.1f} dB above quiet parts; effects: {r.meta['effects']} (MEASURED)")
+            if np.abs(r.rec).max() == 0:
+                s.say(f"- {src}: recording is pure digital silence (the phone mutes it); effects: {r.meta['effects']} (MEASURED)")
+            else:
+                snr = direct_snr(r)
+                heard = f"ping {snr:.1f} dB above quiet parts" if snr > 0 else "pings NOT all heard"
+                s.say(f"- {src}: {heard}; effects: {r.meta['effects']} (MEASURED)")
         except Exception as e:  # a source the phone refuses is a result too
             s.say(f"- {src}: could not record ({e}) (MEASURED)")
 

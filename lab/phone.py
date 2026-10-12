@@ -29,7 +29,10 @@ def devices():
         parts = line.split()
         if len(parts) >= 2 and parts[1] == "device":
             model = adb(parts[0], "shell", "getprop", "ro.product.model").strip()
-            out[NAMES.get(model, model)] = parts[0]
+            name = NAMES.get(model, model)
+            # Same phone twice (wireless-debugging link + classic :5555)? Keep :5555; the other drops.
+            if name not in out or parts[0].endswith(":5555"):
+                out[name] = parts[0]
     return out
 
 

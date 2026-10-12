@@ -9,10 +9,65 @@ def mono(x):
     return x.mean(axis=1) if x.ndim == 2 else x
 
 
-def direct_delay(rec, played):
-    """Frames from the start of the played file to its direct arrival in the recording."""
-    env = np.abs(dsp.matched(mono(rec), mono(played)))
-    return dsp.first_arrival(env)
+def bursts(col, rate, gap_ms=1.0):
+    """Start and end frames of each sound in one played channel (silence of gap_ms or more splits them)."""
+    nz = np.nonzero(np.abs(np.asarray(col)) > 1e-6)[0]
+    if len(nz) == 0:
+        return []
+    cut = np.nonzero(np.diff(nz) > gap_ms / 1000 * rate)[0]
+    st = np.r_[nz[0], nz[cut + 1]]
+    en = np.r_[nz[cut], nz[-1]] + 1
+    return list(zip(st.tolist(), en.tolist()))
+
+
+def ping_train(rec, col, rate, lo=0, hi=None):
+    """Find the played sounds of one channel in the recording, ALL together.
+    The template is ONE sound (never the whole file: a file of repeated pings also lines up with
+    itself one ping off, which once gave arrivals 300-600 ms too early on the real 8T). Every sound
+    must appear at its own spacing; the best common offset wins.
+    lo/hi limit where the FILE START may sit in the recording (frames).
+    Returns dict(offset = recording frame where the played file's frame 0 lands, peaks per sound,
+    noise, snr_db = typical sound vs noise, heard = how many sounds clearly stand out), or None."""
+    b = bursts(col, rate)
+    if not b:
+        return None
+    s0, e0 = b[0]
+    ref = np.asarray(col[s0:e0], dtype=np.float64)
+    env = np.abs(dsp.matched(mono(rec), ref))
+    d = np.array([s for s, _ in b]) - s0
+    hi = len(env) - d[-1] - s0 if hi is None else min(hi, len(env) - d[-1] - s0)
+    lo = max(0, lo)
+    if hi <= lo:
+        return None
+    ks = np.arange(lo, hi) + s0                       # candidate first-sound arrivals
+    comb = np.zeros(len(ks))
+    for di in d:
+        comb += env[ks + di]
+    k = int(ks[int(np.argmax(comb))])
+    tol = max(1, int(0.001 * rate))
+    peaks, at = [], []
+    for di in d:
+        a, z = max(0, k + di - tol), min(len(env), k + di + tol + 1)
+        j = a + int(np.argmax(env[a:z]))
+        peaks.append(float(env[j]))
+        at.append(dsp.interp_peak(env, j))
+    mask = np.ones(len(env), dtype=bool)
+    w = max(len(ref), int(0.02 * rate))
+    for di in d:
+        mask[max(0, k + di - w):k + di + w] = False
+    noise = float(np.sqrt(np.mean(env[mask] ** 2))) + 1e-20 if mask.any() else 1e-20
+    peaks = np.array(peaks)
+    return {"offset": float(at[0] - s0), "arrivals": at, "peaks": peaks.tolist(), "noise": noise,
+            "snr_db": float(dsp.db(np.median(peaks) / noise)), "heard": int((peaks > 4 * noise).sum()),
+            "count": len(d)}
+
+
+def direct_delay(rec, played, rate=48000):
+    """Recording frame where the played file's frame 0 lands (direct path), or None."""
+    pl = np.asarray(played, dtype=np.float64)
+    col = pl[:, int(np.argmax(np.abs(pl).max(axis=0)))] if pl.ndim == 2 else pl
+    t = ping_train(rec, col, rate)
+    return None if t is None else t["offset"]
 
 
 def sweep_response(rec, rate, f0, f1, dur_s, start_frame, pre_frames, nfft=2048, hop=256):
@@ -81,20 +136,25 @@ def segment_levels(rec, rate, at_frame, length, bands=BANDS):
 
 def left_right(rec, played, rate):
     """Task 1 item 4. The played file has left-only chirps first, then right-only chirps.
-    Finds each group's direct arrival and compares levels and arrival times."""
+    Finds each group's direct arrival and compares levels and arrival times. arrival_frame = where
+    the played file's frame 0 lands, judged by that side's chirps (equal if both paths are equal)."""
     rec = np.asarray(rec, dtype=np.float64)
     out = {}
-    for name, col in (("left", 0), ("right", 1)):
-        ref = played[:, col].astype(np.float64)
-        nz = np.nonzero(np.abs(ref) > 1e-6)[0]
-        if len(nz) == 0:
+    bl, br = bursts(played[:, 0], rate), bursts(played[:, 1], rate)
+    if not bl or not br:
+        return out
+    # left chirps must not be mistaken for right ones (same chirp): limit each search
+    L = ping_train(rec, played[:, 0], rate, hi=br[0][0] - bl[0][0])
+    if L is None:
+        return out
+    win = int(0.05 * rate)
+    R = ping_train(rec, played[:, 1], rate, lo=int(L["offset"]) - win, hi=int(L["offset"]) + win)
+    for name, t, b in (("left", L, bl), ("right", R, br)):
+        if t is None:
             continue
-        first = nz[0]
-        env = np.abs(dsp.matched(mono(rec), ref))
-        arr = dsp.first_arrival(env)
-        length = int(0.05 * rate)
-        lv = segment_levels(rec, rate, int(arr) + first, length) if arr is not None else None
-        out[name] = {"arrival_frame": arr, "peak": float(env.max()), "levels_db": lv}
+        lv = segment_levels(rec, rate, int(t["offset"]) + b[0][0], int(0.05 * rate))
+        out[name] = {"arrival_frame": t["offset"], "peak": float(np.median(t["peaks"])), "levels_db": lv,
+                     "snr_db": t["snr_db"], "heard": t["heard"], "count": t["count"]}
     if "left" in out and "right" in out:
         a, b = out["left"], out["right"]
         out["peak_difference_db"] = float(20 * np.log10((a["peak"] + 1e-20) / (b["peak"] + 1e-20)))
