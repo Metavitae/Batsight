@@ -37,7 +37,11 @@ def profiles(rec, ref, starts, rate, max_m=5.0, search_ms=60.0):
         if k + n > len(m):
             break
         arrivals.append(k)
-        out.append(m[k:k + n])
+        # Line pings up by PHASE too: cutting at whole samples leaves each ping turned by up to half
+        # a sample (at 18 kHz that is a third of a wave), which on the real phones made the
+        # still-room wobble as big as the room's echoes. Turn each ping so its direct sound has phase 0.
+        seg = m[k:k + n]
+        out.append(seg * np.conj(seg[0]) / (np.abs(seg[0]) + 1e-20))
     return np.array(out), np.array(arrivals), offset
 
 
