@@ -621,6 +621,7 @@ def pingpong_lines(rec, parts, A, B, root, self_m=None):
     self_m = SELF_M if self_m is None else self_m
     out = []
     t = {}
+    quiet_rec, own_lists = {}, {}
     for hearer in (A, B):
         own = analysis.ping_train(rec[hearer], parts[hearer]["longs_only"], RATE)
         t[(hearer, hearer)] = own
@@ -639,6 +640,7 @@ def pingpong_lines(rec, parts, A, B, root, self_m=None):
             quiet[mask] = 0
         other = B if hearer == A else A
         t[(hearer, other)] = analysis.ping_train(quiet, parts[other]["longs_only"], RATE)
+        quiet_rec[hearer] = quiet
     q = {k: (v["heard"], v["count"], v["snr_db"]) if v else (0, 0, 0) for k, v in t.items()}
     out.append("- hearing check (rounds clearly heard / rounds, dB): " + "; ".join(
         f"{h} hears {p}: {q[(h, p)][0]}/{q[(h, p)][1]} ({q[(h, p)][2]:.0f} dB)" for h, p in t))
@@ -654,7 +656,7 @@ def pingpong_lines(rec, parts, A, B, root, self_m=None):
                 ds.append(C / 2 * ((tAB - tAA) - (tBB - tBA)) / RATE + self_m)
     if ds:
         out.append(f"- phone-to-phone distance, {len(ds)} rounds: median {np.median(ds)*100:.1f} cm, spread "
-                   f"{np.std(ds)*100:.1f} cm (MEASURED; own speaker-mic assumed {self_m*100:.0f} cm each, UNCONFIRMED)")
+                   f"{np.std(ds)*100:.1f} cm (MEASURED; own speaker-to-mic {self_m*100:.0f} cm each, set from the founder's tape)")
     else:
         out.append("- phone-to-phone distance: NOT measured (the phones did not clearly hear each other)")
     for who in (A, B):
@@ -684,8 +686,33 @@ def pingpong_lines(rec, parts, A, B, root, self_m=None):
                 else:
                     k += 1
             return ", ".join(o[:14]) or "none"
+        calf = cal.get(LONG[who]) if LONG[who] in cal else None
+        own_lists[who] = echo.peaks_list(P_long, RATE, floor=echo.echo_floor(P_long, RATE, p["long"], calf))
         out.append(f"- {who} own view ({'calibrated' if cal else 'NOT calibrated, ideal fade (UNCONFIRMED)'}): "
                    f"ECHO {runs(stt == echo.ECHO)} cm; PROBABLE {runs(stt == echo.PROBABLE)} cm (MEASURED)")
+    # Position (founder's two-phone idea): pair each phone's own echoes; keep a pair only if the sound
+    # from one phone, bounced off that object, is heard by the other at the matching extra path.
+    if ds and A in own_lists and B in own_lists:
+        base = float(np.median(ds))
+        cross = []
+        for hearer, player in ((B, A), (A, B)):
+            bl = analysis.bursts(parts[player]["longs_only"], RATE)
+            try:
+                Pc = echo.profiles(quiet_rec[hearer], parts[player]["long"], [a_ for a_, _ in bl], RATE, max_m=6.0)[0]
+            except ValueError:
+                continue
+            envc = np.abs(Pc.mean(axis=0))
+            fl = np.maximum(6 * echo.noise_level(Pc) / np.sqrt(len(Pc)),
+                            echo.direct_tail(envc, parts[player]["long"], RATE) * 10 ** (10 / 20))
+            cross += [(2 * r, st) for r, st in echo.peaks_list(Pc, RATE, floor=fl, lo_m=0.03)]
+        objs = echo.locate(own_lists[A], own_lists[B], cross, base)
+        if objs:
+            out.append(f"- objects located from both phones (x along {A}->{B}, from {A}; y = distance off that line, "
+                       f"in front of OR behind it: two phones can't tell which) (MEASURED, positions UNCONFIRMED):")
+            for x, y, ra, rb, st in objs[:12]:
+                out.append(f"  x {x*100:+.0f} cm, y {y*100:.0f} cm  ({A} {ra*100:.0f} cm, {B} {rb*100:.0f} cm)")
+        else:
+            out.append("- objects located from both phones: none passed the cross-path check")
     return out
 
 
@@ -812,7 +839,7 @@ def task4c(args):
     for rnd in range(5):
         d, t = pair_round(s, a, b, specA, specB, va, vb)
         results.append(d)
-        s.say(f"- round {rnd+1}: " + (f"{d*100:.1f} cm (MEASURED; own speaker-to-mic ~2 cm each, from the founder's tape); "
+        s.say(f"- round {rnd+1}: " + (f"{d*100:.1f} cm (MEASURED; own speaker-to-mic ~2 cm each, set from the founder's tape: phones 39 cm apart); "
               f"{args.other} answered {(t['tAB'] - t['tAA']) / RATE * 1000:.0f} ms after {args.phone}'s sound" if d is not None
               else "NO DISTANCE - " + link_words(t, args.phone, args.other)))
     ok = [d for d in results if d is not None]

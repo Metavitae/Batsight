@@ -325,3 +325,14 @@ def test_near_far_calibration_does_not_hide_far_walls():
                                   calib_near=np.abs(profs(ref_s, [(2.5, 0.05)]).mean(0)))
     wall = (r > 2.45) & (r < 2.55)
     assert (st[wall] == echo.ECHO).any()                  # the wall is NOT hidden by the calibration
+
+
+def test_locate_two_phones():
+    d = 0.39                                    # phones 39 cm apart, A at (0,0), B at (0.39, 0)
+    objs = [(0.10, 0.50), (0.60, 1.20), (-0.30, 0.80)]
+    ra = [float(np.hypot(x, y)) for x, y in objs]
+    rb = [float(np.hypot(x - d, y)) for x, y in objs]
+    cross = [(a + b - d, 10.0) for a, b in zip(ra, rb)]
+    found = echo.locate([(r, 10) for r in ra], [(r, 10) for r in rb], cross, d)
+    for x, y in objs:
+        assert any(abs(fx - x) < 0.02 and abs(fy - y) < 0.02 for fx, fy, *_ in found), (x, y, found)

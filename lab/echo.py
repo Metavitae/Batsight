@@ -307,6 +307,21 @@ def watch(profs, rate, every_s, lo_m=0.3, hi_m=4.0, fast_n=4, slow_s=15.0, z=4.0
     return out
 
 
+def echo_floor(profs, rate, ref, calib=None, tail_margin_db=10.0, calib_free_m=0.8, calib_margin_db=6.0):
+    """The level an echo must beat at each distance: 6x the ping-to-ping noise, and the phone's own
+    sound fading (measured free-air calibration near the phone, else the ideal fade) plus a margin."""
+    env = np.abs(profs.mean(axis=0))
+    noise = noise_level(profs) / np.sqrt(len(profs))
+    tail = direct_tail(env, ref, rate)
+    margin = tail_margin_db
+    if calib is not None:
+        c = np.zeros(len(env)); m_ = min(len(env), len(calib)); c[:m_] = calib[:m_] * env[0] / (calib[0] + 1e-20)
+        cut = min(len(env) - 1, int(np.ceil(2 * calib_free_m / C * rate)))
+        tail = np.concatenate([c[:cut], np.minimum(tail[cut:], c[cut])])
+        margin = calib_margin_db
+    return np.maximum(6 * noise, tail * 10 ** (margin / 20))
+
+
 def near_far(near_profs, far_profs, rate, near_ref, far_ref, near_max_m=0.6, far_min_m=2.0, tail_margin_db=10.0,
              calib_near=None, calib_far=None, calib_free_m=0.8, calib_margin_db=6.0):
     """Founder's idea: alternate SHORT sounds (own fade gone within ~0.3 m: near objects) and LONG sounds
@@ -318,22 +333,7 @@ def near_far(near_profs, far_profs, rate, near_ref, far_ref, near_max_m=0.6, far
     Returns (range axis, near hits, far hits, state per distance)."""
     def hits(profs, ref, calib):
         env = np.abs(profs.mean(axis=0))
-        noise = noise_level(profs) / np.sqrt(len(profs))
-        tail = direct_tail(env, ref, rate)
-        margin = tail_margin_db
-        if calib is not None:
-            # Trust the free-air calibration only where it really was free air (~0.8 m); beyond that a
-            # calibration also holds the room's walls, which must NOT become 'the phone's own sound'.
-            # There, hold the calibrated level at 0.8 m flat (and never above the ideal). Real 8T: the
-            # ideal model said the Warp's own sound lingers at -44 dB out to 3 m; measured, -58..-63 dB.
-            c = np.zeros(len(env)); m_ = min(len(env), len(calib)); c[:m_] = calib[:m_] * env[0] / (calib[0] + 1e-20)
-            cut = min(len(env) - 1, int(np.ceil(2 * calib_free_m / C * rate)))
-            tail = np.concatenate([c[:cut], np.minimum(tail[cut:], c[cut])])
-            margin = calib_margin_db
-        else:
-            margin = tail_margin_db
-        floor = np.maximum(6 * noise, tail * 10 ** (margin / 20))
-        h = env > floor
+        h = env > echo_floor(profs, rate, ref, calib, tail_margin_db, calib_free_m, calib_margin_db)
         h[:blank_bins(rate, 0.15)] = False
         return h
     n = min(near_profs.shape[1], far_profs.shape[1])
@@ -349,3 +349,49 @@ def near_far(near_profs, far_profs, rate, near_ref, far_ref, near_max_m=0.6, far
     st[mid & hn & hf] = ECHO
     st[mid & (hn ^ hf)] = PROBABLE
     return r, hn, hf, st
+
+
+def peaks_list(profs, rate, floor=None, min_sep_m=0.05, lo_m=0.15, hi_m=4.0, top=20):
+    """Echo peaks of averaged profiles above `floor` (default 6x ping-to-ping noise): [(range m, strength)]."""
+    env = np.abs(profs.mean(axis=0))
+    noise = noise_level(profs) / np.sqrt(len(profs))
+    fl = 6 * noise if floor is None else floor
+    r = range_axis(len(env), rate)
+    pk = [i for i in range(1, len(env) - 1) if lo_m <= r[i] <= hi_m and env[i] >= env[i - 1]
+          and env[i] > env[i + 1] and env[i] > fl[i]]
+    pk.sort(key=lambda i: -env[i] / fl[i])
+    keep = []
+    for i in pk:
+        if all(abs(r[i] - r[j]) > min_sep_m for j in keep):
+            keep.append(i)
+    return [(float(r[i]), float(env[i] / fl[i])) for i in sorted(keep[:top])]
+
+
+def locate(a_list, b_list, cross_extra, baseline_m, tol_m=0.04):
+    """Two phones `baseline_m` apart (A at x=0, B at x=baseline). a_list / b_list: echo ranges each phone
+    hears from ITS OWN sound. cross_extra: [(extra path m, strength)] = how much longer than the direct
+    A->B path the A-sound-via-object-to-B paths are. A pair (ra, rb) is kept only if the cross path
+    ra + rb - baseline is actually heard (within tol_m). Position: circles of radius ra around A and
+    rb around B; y is mirror-ambiguous (in front of / behind the A-B line).
+    Returns [(x m, |y| m, ra, rb, cross strength)]."""
+    out = []
+    for ra, _ in a_list:
+        for rb, _ in b_list:
+            if abs(ra - rb) > baseline_m + tol_m or ra + rb < baseline_m:
+                continue
+            want = ra + rb - baseline_m
+            hits = [(abs(e - want), st) for e, st in cross_extra if abs(e - want) <= tol_m]
+            if not hits:
+                continue
+            x = (ra ** 2 - rb ** 2 + baseline_m ** 2) / (2 * baseline_m)
+            y2 = ra ** 2 - x ** 2
+            if y2 < -0.01:
+                continue
+            out.append((float(x), float(np.sqrt(max(0.0, y2))), ra, rb, float(min(hits)[1])))
+    # one object per cross echo: keep the best-supported pairing, drop near-duplicates
+    out.sort(key=lambda o: -o[4])
+    keep = []
+    for o in out:
+        if all(np.hypot(o[0] - k[0], o[1] - k[1]) > 0.06 for k in keep):
+            keep.append(o)
+    return sorted(keep, key=lambda o: o[2])
