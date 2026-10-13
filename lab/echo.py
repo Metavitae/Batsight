@@ -308,7 +308,7 @@ def watch(profs, rate, every_s, lo_m=0.3, hi_m=4.0, fast_n=4, slow_s=15.0, z=4.0
 
 
 def near_far(near_profs, far_profs, rate, near_ref, far_ref, near_max_m=0.6, far_min_m=2.0, tail_margin_db=10.0,
-             calib_near=None, calib_far=None, calib_free_m=0.8):
+             calib_near=None, calib_far=None, calib_free_m=0.8, calib_margin_db=6.0):
     """Founder's idea: alternate SHORT sounds (own fade gone within ~0.3 m: near objects) and LONG sounds
     (more energy: far objects). Each distance gets the view that can judge it; the middle zone
     (near_max_m..far_min_m) gets BOTH, and they must agree:
@@ -320,15 +320,19 @@ def near_far(near_profs, far_profs, rate, near_ref, far_ref, near_max_m=0.6, far
         env = np.abs(profs.mean(axis=0))
         noise = noise_level(profs) / np.sqrt(len(profs))
         tail = direct_tail(env, ref, rate)
+        margin = tail_margin_db
         if calib is not None:
             # Trust the free-air calibration only where it really was free air (~0.8 m); beyond that a
             # calibration also holds the room's walls, which must NOT become 'the phone's own sound'.
-            # There, continue the measured fade along the ideal shape (never below the ideal).
+            # There, hold the calibrated level at 0.8 m flat (and never above the ideal). Real 8T: the
+            # ideal model said the Warp's own sound lingers at -44 dB out to 3 m; measured, -58..-63 dB.
             c = np.zeros(len(env)); m_ = min(len(env), len(calib)); c[:m_] = calib[:m_] * env[0] / (calib[0] + 1e-20)
             cut = min(len(env) - 1, int(np.ceil(2 * calib_free_m / C * rate)))
-            factor = max(1.0, c[cut] / (tail[cut] + 1e-30))
-            tail = np.concatenate([np.maximum(c[:cut], tail[:cut]), tail[cut:] * factor])
-        floor = np.maximum(6 * noise, tail * 10 ** (tail_margin_db / 20))
+            tail = np.concatenate([c[:cut], np.minimum(tail[cut:], c[cut])])
+            margin = calib_margin_db
+        else:
+            margin = tail_margin_db
+        floor = np.maximum(6 * noise, tail * 10 ** (margin / 20))
         h = env > floor
         h[:blank_bins(rate, 0.15)] = False
         return h

@@ -483,6 +483,29 @@ def dry_report(s, r):
 SHORT = {"8T": "chirp,f0=2000,f1=20000,ms=5,db=-20", "POCO": "chirp,f0=2000,f1=15000,ms=5,db=-20"}
 
 
+def nearfar_lines(P, near_snd, far_snd, cal):
+    """Report lines for a near/far recording (also used to re-analyse old recordings)."""
+    rr, hn, hf, st = echo.near_far(P["short"], P["warp_rise"], RATE, near_snd, far_snd["warp_rise"],
+                                   calib_near=cal.get("short"), calib_far=cal.get("warp_rise"))
+    def runs(mask):
+        out, k = [], 0
+        while k < len(mask):
+            if mask[k]:
+                j = k
+                while j < len(mask) and mask[j]:
+                    j += 1
+                out.append(f"{rr[k]*100:.0f}" if j - k < 3 else f"{rr[k]*100:.0f}-{rr[j-1]*100:.0f}")
+                k = j
+            else:
+                k += 1
+        return ", ".join(out[:16]) or "none"
+    return [f"- calibration: {'measured free-air response' if cal else 'NONE yet, ideal fade used (UNCONFIRMED)'}",
+            f"- short (near view) sees echoes at: {runs(hn)} cm (MEASURED)",
+            f"- long (far view, Warp) sees echoes at: {runs(hf)} cm (MEASURED)",
+            f"- ECHO (agreed, or in the zone only one view can judge): {runs(st == echo.ECHO)} cm",
+            f"- PROBABLE (0.6-2 m, only one view saw it): {runs(st == echo.PROBABLE)} cm"]
+
+
 def task_nearfar(args):
     """Short and long sounds alternating (founder's idea): near view, far view, and the in-between zone
     seen by both. --step calib = the phone held in free air (no objects within ~1 m): saves each sound's
@@ -528,26 +551,8 @@ def task_nearfar(args):
         s.say(f"- Free-air calibration saved: {cal_file.name}")
     else:
         cal = dict(np.load(cal_file)) if cal_file.exists() else {}
-        far = P["warp_rise"]   # one long sound per run; Hyperspace V is kept as a second opinion (TODO merge)
-        rr, hn, hf, st = echo.near_far(P["short"], far, RATE, near_snd, far_snd["warp_rise"],
-                                       calib_near=cal.get("short"), calib_far=cal.get("warp_rise"))
-        s.say(f"- calibration: {'measured free-air response' if cal else 'NONE yet, ideal fade used (UNCONFIRMED)'}")
-        def runs(mask):
-            out, k = [], 0
-            while k < len(mask):
-                if mask[k]:
-                    j = k
-                    while j < len(mask) and mask[j]:
-                        j += 1
-                    out.append(f"{rr[k]*100:.0f}-{rr[j-1]*100:.0f}")
-                    k = j
-                else:
-                    k += 1
-            return ", ".join(out[:14]) or "none"
-        s.say(f"- short (near view) sees echoes at: {runs(hn)} cm (MEASURED)")
-        s.say(f"- long (far view) sees echoes at: {runs(hf)} cm (MEASURED)")
-        s.say(f"- ECHO (agreed, or in the zone only one view can judge): {runs(st == echo.ECHO)} cm")
-        s.say(f"- PROBABLE (in-between zone, only one view saw it): {runs(st == echo.PROBABLE)} cm")
+        for line in nearfar_lines(P, near_snd, far_snd, cal):
+            s.say(line)
     s.save()
 
 
