@@ -6,3 +6,10 @@ local.properties
 __pycache__/
 .pytest_cache/
 out/
+
+# Room photos are private (show a home): they live in Drive only, never in this public repo
+*.jpg
+*.jpeg
+*.heic
+*.HEIC
+*.JPG
