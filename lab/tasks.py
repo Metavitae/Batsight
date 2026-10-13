@@ -762,12 +762,14 @@ def task_live(args):
         dets = [x for x in m["detections"].splitlines() if x]
         errs = [float(x.split(",")[1]) for x in m["self_error_ms"].splitlines() if x]
         s.say(f"- {w} ({m['role']}): {len(own)} own sounds; heard the partner {len(dets)} times; "
+              + (f"answers {m.get('beats_late', 0)} beat(s) behind; " if m['role'] == "follow" else "")
+              + 
               f"recorded {m['in_frames'] / RATE:.1f} s; notes {m['notes']}")
         if errs:
             s.say(f"  own sound heard vs meant: median {np.median(errs):+.1f} ms, spread {np.std(errs):.1f} ms "
                   f"(final self-correction {m['final_correction_ms']:.1f} ms)")
         else:
-            s.say("  own sounds not heard back (expected in a dry run)")
+            s.say("  own sounds not heard back" + (" (expected in a dry run)" if args.dry else " (UNEXPECTED: check volume/mic)"))
     s.save()
 
 

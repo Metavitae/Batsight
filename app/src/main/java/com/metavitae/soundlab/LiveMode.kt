@@ -58,6 +58,7 @@ class LiveMode(private val ctx: Context, private val p: Params, private val stat
     @Volatile private var rFrame = -1L
     @Volatile private var rNs = 0L
     private var correctionNs = 0L
+    private var beatsLate = 0
     // the last 3 s of microphone sound, for listening (the full recording is kept separately for saving)
     private val ring = FloatArray(48000 * 3)
 
@@ -259,10 +260,19 @@ class LiveMode(private val ctx: Context, private val p: Params, private val stat
                         val tArr = inFrameToNs(arr)
                         detections.append("$arr,${f2(score)},$tArr\n")
                         if (tArr > 0 && tFrame >= 0) {
-                            val want = tArr + p.halfMs * 1_000_000L          // when our sound should be HEARD
-                            val f = nsToOutFrame(want - correctionNs)
-                            if (f > outFrames + chunk * 2) { schedule.add(f); intendedNs[f] = want }
-                            else notes.add("late answer skipped at in-frame $arr")
+                            // when our sound should be HEARD: half a beat after the lead's. If our speaker's
+                            // queue is longer than that (real POCO: every half-beat answer came too late),
+                            // answer a whole beat later: still exactly between the lead's beats.
+                            var want = tArr + p.halfMs * 1_000_000L
+                            var f = nsToOutFrame(want - correctionNs)
+                            var extra = 0
+                            while (f <= outFrames + chunk * 2 && extra < 4) {
+                                want += p.cycleMs * 1_000_000L; f = nsToOutFrame(want - correctionNs); extra++
+                            }
+                            if (f > outFrames + chunk * 2) {
+                                schedule.add(f); intendedNs[f] = want
+                                if (extra > 0 && beatsLate != extra) { beatsLate = extra; notes.add("answering $extra beat(s) later (speaker queue)") }
+                            } else notes.add("late answer skipped at in-frame $arr")
                         }
                     }
                 }
@@ -301,7 +311,7 @@ class LiveMode(private val ctx: Context, private val p: Params, private val stat
             .put("intended_ns", intendedNs.entries.joinToString(",") { "${it.key}:${it.value}" })
             .put("detections", detections.toString()).put("self_error_ms", selfErr.toString())
             .put("timestamps", synchronized(stamps) { stamps.toString() })
-            .put("in_frames", inFrames).put("out_frames", outFrames).put("final_correction_ms", correctionNs / 1e6)
+            .put("beats_late", beatsLate).put("in_frames", inFrames).put("out_frames", outFrames).put("final_correction_ms", correctionNs / 1e6)
             .raw("notes", Json.list(notes.map { Json.quote(it) })).put("saved", wav)
         Results.save(ctx, "${p.id}.json", "application/json", meta.toString().toByteArray())
         return "live ${p.role}: ${schedule.size} own sounds, partner heard ${detections.lines().size - 1} times"
