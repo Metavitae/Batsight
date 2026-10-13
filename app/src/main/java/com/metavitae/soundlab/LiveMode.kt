@@ -95,7 +95,7 @@ class LiveMode(private val ctx: Context, private val p: Params, private val stat
             }
             len = len shl 1
         }
-        if (inverse) for (i in 0 until n) { re[i] /= n; im[i] /= n }
+        if (inverse) { val d = n.toDouble(); for (i in 0 until n) { re[i] = re[i] / d; im[i] = im[i] / d } }
     }
 
     /** Matched filter of `x` against `tmpl`: returns (index of best match = sound start in x, peak / rms). */
