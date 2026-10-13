@@ -359,21 +359,29 @@ def task3(args):
     s.save()
 
 
-def echo_list(profs, max_m=4.0, min_sep_m=0.05, top=14):
-    """Every echo bump above 6x the ping-to-ping noise, beyond the blind zone: [(m, dB vs direct, x noise)]."""
+def echo_list(profs, max_m=4.0, min_sep_m=0.05, top=14, ref=None, tail_margin_db=10.0, blank_m=0.15):
+    """Every echo bump that stands clearly out: above 6x the ping-to-ping noise AND (with ref, the played
+    sound) above the direct sound's expected ripple tail x tail_margin_db at that spot (the speaker and
+    phone body ring a bit longer than ideal). Nothing closer than blank_m. [(m, dB vs direct, x floor)]"""
     env = np.abs(profs.mean(axis=0))
     noise = echo.noise_level(profs) / np.sqrt(len(profs))
     r = echo.range_axis(len(env), RATE)
-    b = echo.blind_end(env, noise, RATE, 6, 0.15)
+    floor = 6 * noise
+    if ref is not None:
+        floor = np.maximum(floor, echo.direct_tail(env, ref, RATE) * 10 ** (tail_margin_db / 20))
+    else:
+        floor[:echo.blind_end(env, noise, RATE, 6, blank_m)] = np.inf
+    b = echo.blank_bins(RATE, blank_m)
     pk = [i for i in range(max(b, 1), len(env) - 1)
-          if env[i] >= env[i - 1] and env[i] > env[i + 1] and env[i] > 6 * noise[i] and r[i] <= max_m]
-    pk.sort(key=lambda i: -env[i])
+          if env[i] >= env[i - 1] and env[i] > env[i + 1] and env[i] > floor[i] and r[i] <= max_m]
+    pk.sort(key=lambda i: -env[i] / floor[i])
     keep = []
     for i in pk:
         if all(abs(r[i] - r[j]) > min_sep_m for j in keep):
             keep.append(i)
     keep = sorted(keep[:top])
-    return r[b], [(float(r[i]), float(20 * np.log10(env[i] / env[0])), float(env[i] / noise[i])) for i in keep]
+    first = r[next((i for i in range(b, len(env)) if np.isfinite(floor[i])), b)]
+    return first, [(float(r[i]), float(20 * np.log10(env[i] / env[0])), float(env[i] / floor[i])) for i in keep]
 
 
 def task_look(args):
@@ -387,10 +395,14 @@ def task_look(args):
         r = run(s, serial, f"look_{name}", spec=spec, vol=vol, pre=500, post=300)
         profs, _, _ = echo.profiles(analysis.mono(r.rec), signals.reference(spec), signals.ping_starts(spec), RATE, max_m=4.0)
         np.save(s.work / f"look_{name}_profiles.npy", profs)
-        blind, lst = echo_list(profs)
         s.say(f"## {name}: `{spec}` ({len(profs)} pings)")
-        s.say(f"- blind zone: up to {blind*100:.0f} cm (MEASURED)")
-        s.say("- echoes: " + ", ".join(f"{m*100:.0f} cm ({db:.0f} dB, {x:.0f}x)" for m, db, x in lst) + " (MEASURED)")
+        # Two readouts until a free-air calibration settles which is right near the phone (UNCONFIRMED):
+        blind, lst = echo_list(profs)
+        s.say(f"- readout 1 (blind until the first quiet spot): blind to {blind*100:.0f} cm; echoes "
+              + ", ".join(f"{m*100:.0f} cm ({x:.0f}x)" for m, db, x in lst) + " (MEASURED)")
+        _, lst2 = echo_list(profs, ref=signals.reference(spec))
+        s.say("- readout 2 (must beat the phone's own expected ripple tail +10 dB): echoes "
+              + ", ".join(f"{m*100:.0f} cm ({x:.0f}x)" for m, db, x in lst2) + " (MEASURED)")
     s.save()
 
 

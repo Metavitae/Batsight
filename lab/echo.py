@@ -61,6 +61,21 @@ def blind_end(env, noise, rate, z=6.0, blank_m=0.15):
     return max(b, k)
 
 
+def direct_tail(env, ref, rate):
+    """Expected faint 'ripple tail' of the phone's own direct sound at every distance: the played sound's
+    own filter response (same smooth weighting), scaled to the measured direct peak. After processing,
+    the direct sound leaves ripples as long as the sound itself (a 20 ms chirp: ~3.4 m), and small
+    objects' echoes can be just as faint. Real run (8T, evening): the laptop, ashtray and mug echoed
+    without a gap from 16 to 50 cm, and the old 'blind until the first quiet spot' rule hid them all."""
+    ref = np.asarray(ref, dtype=np.float64)
+    a = np.abs(dsp.matched(np.concatenate([ref, np.zeros(len(env))]), ref))
+    k = int(np.argmax(a))
+    tail = a[k:k + len(env)] / (a[k] + 1e-20)
+    tail = np.pad(tail, (0, max(0, len(env) - len(tail))))
+    tail = np.maximum.accumulate(tail[::-1])[::-1]       # ripples count as 'still fading'
+    return env[0] * tail
+
+
 def baseline(profs):
     """Room's echo signature: the average of many pings in a still room (complex average)."""
     return profs.mean(axis=0)
