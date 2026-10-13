@@ -557,6 +557,10 @@ def task_nearfar(args):
 
 
 LONG = {"8T": "warp_rise", "POCO": "warp_fall"}
+# Each phone's own speaker-to-mic path, from the founder's tape (2026-10-12): phones 39 cm apart, the
+# ping-pong maths gave 47.0 cm assuming 10 cm each, so the real average is ~2 cm (speaker and main mic
+# both sit on the bottom edge).
+SELF_M = 0.02
 
 
 def task_pingpong(args):
@@ -613,7 +617,8 @@ def task_pingpong(args):
     s.save()
 
 
-def pingpong_lines(rec, parts, A, B, root, self_m=0.1):
+def pingpong_lines(rec, parts, A, B, root, self_m=None):
+    self_m = SELF_M if self_m is None else self_m
     out = []
     t = {}
     for hearer in (A, B):
@@ -759,7 +764,7 @@ def pair_round(s, a, b, specA, specB, va, vb):
         phone.pull(ser, rid, s.src)
     ra, rb = phone.Run(s.src, ia), phone.Run(s.src, ib)
     return pair.distance(analysis.mono(ra.rec), analysis.mono(rb.rec), signals.reference(specA),
-                         signals.reference(specB), RATE, 0.1, 0.1, gap_s=0.2)
+                         signals.reference(specB), RATE, SELF_M, SELF_M, gap_s=0.2)
 
 
 def link_check(s, a, b, A, B, specA, specB, va, vb):
@@ -807,7 +812,7 @@ def task4c(args):
     for rnd in range(5):
         d, t = pair_round(s, a, b, specA, specB, va, vb)
         results.append(d)
-        s.say(f"- round {rnd+1}: " + (f"{d*100:.1f} cm (MEASURED; self speaker-mic assumed 10 cm each, UNCONFIRMED); "
+        s.say(f"- round {rnd+1}: " + (f"{d*100:.1f} cm (MEASURED; own speaker-to-mic ~2 cm each, from the founder's tape); "
               f"{args.other} answered {(t['tAB'] - t['tAA']) / RATE * 1000:.0f} ms after {args.phone}'s sound" if d is not None
               else "NO DISTANCE - " + link_words(t, args.phone, args.other)))
     ok = [d for d in results if d is not None]
