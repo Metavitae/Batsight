@@ -23,6 +23,8 @@ class MainActivity : Activity() {
         //        [--es source unprocessed] [--ei ch 1] [--ei rate 48000] [--ei mic -1] [--es out speaker]
         //        [--ei vol -1] [--ei pre 500] [--ei post 500] [--ei delay 0] [--ei record 3000]
         //        [--ez swap false] [--ez motion false] [--ez fxoff true]
+        //   --es mode live --es id <name> --es role lead|follow --es own <wav> --es partner <wav> --es ownlong <wav>
+        //        [--ei cycle 480] [--ei cycles 30] [--ei half 240] [--ei vol -1] [--es thresh 8]
         val i = intent
         when (i.getStringExtra("mode")) {
             "facts" -> withMic { showFacts(i.getStringExtra("id") ?: "facts_${stamp()}") }
@@ -45,6 +47,20 @@ class MainActivity : Activity() {
                     motion = i.getBooleanExtra("motion", false),
                     effectsOff = i.getBooleanExtra("fxoff", true),
                     armed = i.getBooleanExtra("armed", false),
+                ))
+            }
+            "live" -> withMic {
+                showLive(LiveMode.Params(
+                    id = i.getStringExtra("id") ?: "live_${stamp()}",
+                    role = i.getStringExtra("role") ?: "lead",
+                    own = i.getStringExtra("own") ?: "",
+                    partner = i.getStringExtra("partner") ?: "",
+                    ownLong = i.getStringExtra("ownlong") ?: "",
+                    cycleMs = i.getIntExtra("cycle", 480),
+                    cycles = i.getIntExtra("cycles", 30),
+                    halfMs = i.getIntExtra("half", 240),
+                    vol = i.getIntExtra("vol", -1),
+                    thresh = (i.getStringExtra("thresh") ?: "8").toDouble(),
                 ))
             }
             null -> showSafety()
@@ -124,6 +140,29 @@ class MainActivity : Activity() {
             val path = Results.saveText(this, "$id.txt", report)
             busy = false
             runOnUiThread { status?.text = "Done. Saved: $path"; out?.text = report }
+        }.start()
+    }
+
+    private fun showLive(p: LiveMode.Params) {
+        if (busy) return
+        busy = true
+        var status: TextView? = null
+        var mic: TextView? = null
+        scrollPage {
+            text("Live rhythm", 24f, bold = true)
+            mic = text("● Mic is on", 16f, bold = true, color = Color.RED)
+            text("Run: ${p.id} (${p.role})", 13f, color = Color.LTGRAY)
+            status = text("Starting...", 16f, color = Color.rgb(255, 200, 0))
+        }
+        Thread {
+            val res = try { LiveMode(this, p) { s -> runOnUiThread { status?.text = s } }.run() }
+                      catch (e: Throwable) {
+                          val msg = "FAILED: ${e.javaClass.simpleName} ${e.message}"
+                          Results.save(this, "${p.id}.json", "application/json", Json().put("id", p.id).put("error", msg).toString().toByteArray())
+                          msg
+                      }
+            busy = false
+            runOnUiThread { mic?.text = "Mic is off"; mic?.setTextColor(Color.LTGRAY); status?.text = "Done.\n$res" }
         }.start()
     }
 
