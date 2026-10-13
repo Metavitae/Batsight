@@ -44,7 +44,7 @@ class LiveMode(private val ctx: Context, private val p: Params, private val stat
         val cycles: Int = 30,
         val halfMs: Int = 240,
         val vol: Int = -1,
-        val thresh: Double = 8.0,
+        val thresh: Double = 7.0,
         val rate: Int = 48000,
     )
 
@@ -234,7 +234,9 @@ class LiveMode(private val ctx: Context, private val p: Params, private val stat
         }
 
         // ---- listening loop (both roles: lead only checks itself; follow also answers)
-        val win = rate / 10                                  // look at the last 100 ms (+ template) each time
+        // look back 250 ms (+ template) each time: on the real POCO a check sometimes ran late and a beat
+        // slipped between two checks of the last 100 ms (2 of 30 missed). Same FFT size, so no extra cost.
+        val win = rate / 4
         fun nfft(m: Int): Int { var x = 1; while (x < m) x = x shl 1; return x }
         val mPartner = Matcher(partner, nfft(win + partner.size)).also { it.prepare(::fft) }
         val mSelf = Matcher(ownLong, nfft(win + ownLong.size)).also { it.prepare(::fft) }

@@ -60,7 +60,7 @@ class MainActivity : Activity() {
                     cycles = i.getIntExtra("cycles", 30),
                     halfMs = i.getIntExtra("half", 240),
                     vol = i.getIntExtra("vol", -1),
-                    thresh = (i.getStringExtra("thresh") ?: "8").toDouble(),
+                    thresh = (i.getStringExtra("thresh") ?: "7").toDouble(),
                 ))
             }
             null -> showSafety()

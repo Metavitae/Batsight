@@ -733,6 +733,21 @@ def live_files(s, who, serial):
     return names
 
 
+def live_parts(meta, who):
+    """Rebuild what a phone played in a live run (its long sweeps at the frames it scheduled), so the
+    ping-pong analysis (distance, near/far, positions) can run on live recordings too."""
+    long_ = sounds.SOUNDS[LONG[who]]()
+    short = signals.reference(SHORT[who])
+    sched = sorted(int(x) for x in meta["schedule"].split(",") if x)
+    if not sched:
+        return None
+    lo = np.zeros(sched[-1] - sched[0] + len(long_) + 10)
+    for f in sched:
+        k = f - sched[0]
+        lo[k:k + len(long_)] += long_
+    return dict(long=long_, short=short, longs_only=lo, lead=0)
+
+
 def task_live(args):
     """LIVE two-phone rhythm (founder's idea): the lead plays a steady beat on its own clock; the
     follower recognises it on the phone and answers half a beat later, correcting its own delay like
@@ -770,6 +785,14 @@ def task_live(args):
                   f"(final self-correction {m['final_correction_ms']:.1f} ms)")
         else:
             s.say("  own sounds not heard back" + (" (expected in a dry run)" if args.dry else " (UNEXPECTED: check volume/mic)"))
+    if len(who) == 2 and not args.dry:
+        metas = {w: json.loads((s.src / f"{ids[w]}.json").read_text()) for w in who}
+        parts = {w: live_parts(metas[w], w) for w in who}
+        if all(parts.values()) and not any("error" in metas[w] for w in who):
+            rec = {w: analysis.mono(wavio.read(s.src / f"{ids[w]}.wav")[0]) for w in who}
+            s.say("\n## Distance, own views and positions from the live recording")
+            for line in pingpong_lines(rec, parts, who[0], who[1], args.root):
+                s.say(line)
     s.save()
 
 
