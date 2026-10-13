@@ -101,10 +101,11 @@ def check_safe(spec):
 
 
 def start(serial, mode, run_id, **extras):
+    for key in ("file", "own", "partner", "ownlong"):          # every sound file must be safety-checked
+        if extras.get(key) and extras[key] not in _CHECKED:
+            raise SystemExit(f"refused: sound file {extras[key]} was not safety-checked (use push_signal)")
     if extras.get("spec"):
         check_safe(extras["spec"])
-    if extras.get("file") and extras["file"] not in _CHECKED:
-        raise SystemExit(f"refused: sound file {extras['file']} was not safety-checked (use push_signal)")
     parts = ["am", "start", "-S", "-n", f"{PKG}/.MainActivity", "--es", "mode", mode, "--es", "id", run_id]
     for k, v in extras.items():
         if v is None:

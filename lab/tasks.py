@@ -716,6 +716,61 @@ def pingpong_lines(rec, parts, A, B, root, self_m=None):
     return out
 
 
+def live_files(s, who, serial):
+    """Push this phone's live-mode sounds: its beat (long sweep, short chirp 120 ms later), its long sweep
+    alone (to hear itself), and nothing else; returns the file names."""
+    long_ = sounds.SOUNDS[LONG[who]]()
+    short = signals.reference(SHORT[who])
+    beat = np.zeros(int(0.12 * RATE) + len(short) + 10)
+    beat[:len(long_)] += long_
+    beat[int(0.12 * RATE):int(0.12 * RATE) + len(short)] += short
+    names = {}
+    for tag, x in (("beat", beat), ("long", long_)):
+        fn = f"live_{who}_{tag}.wav"
+        wavio.write(s.work / fn, np.stack([x, x], axis=1), RATE)
+        phone.push_signal(serial, s.work / fn)
+        names[tag] = fn
+    return names
+
+
+def task_live(args):
+    """LIVE two-phone rhythm (founder's idea): the lead plays a steady beat on its own clock; the
+    follower recognises it on the phone and answers half a beat later, correcting its own delay like
+    a drummer. --dry: volume 0 (silent check); --phone alone: one phone (role from --step, default lead)."""
+    s = Session(args.root, f"live_{args.phone}" + (f"_{args.other}" if args.other else ""))
+    cycles = int(args.angle) if args.angle else 30
+    who = [args.phone] + ([args.other] if args.other else [])
+    roles = {args.phone: (args.step or "lead")} if not args.other else {args.phone: "lead", args.other: "follow"}
+    ser = {w: phone.serial_of(w) for w in who}
+    files = {w: live_files(s, w, ser[w]) for w in who}
+    partner = {w: live_files(s, ("POCO" if w == "8T" else "8T"), ser[w])["long"] for w in who}
+    vols = {w: 0 if args.dry else load_levels(args.root).get(w, 8) for w in who}
+    ids = {w: s.rid(f"live_{w}") for w in who}
+    s.say(f"# The Batsight - live rhythm - {', '.join(f'{w}: {roles[w]}' for w in who)}" + (" (DRY, volume 0)" if args.dry else "") + "\n")
+    phone.start_together([(ser[w], "live", ids[w], dict(role=roles[w], own=files[w]["beat"], partner=partner[w],
+                                                          ownlong=files[w]["long"], cycle=480, cycles=cycles, half=240,
+                                                          vol=vols[w])) for w in who])
+    for w in who:
+        phone.wait_for(ser[w], f"{ids[w]}.json", cycles * 0.48 + 60, every=0.5)
+        phone.pull(ser[w], ids[w], s.src)
+    for w in who:
+        m = json.loads((s.src / f"{ids[w]}.json").read_text())
+        if "error" in m:
+            s.say(f"- {w}: FAILED on the phone: {m['error']}")
+            continue
+        own = [x for x in m["schedule"].split(",") if x]
+        dets = [x for x in m["detections"].splitlines() if x]
+        errs = [float(x.split(",")[1]) for x in m["self_error_ms"].splitlines() if x]
+        s.say(f"- {w} ({m['role']}): {len(own)} own sounds; heard the partner {len(dets)} times; "
+              f"recorded {m['in_frames'] / RATE:.1f} s; notes {m['notes']}")
+        if errs:
+            s.say(f"  own sound heard vs meant: median {np.median(errs):+.1f} ms, spread {np.std(errs):.1f} ms "
+                  f"(final self-correction {m['final_correction_ms']:.1f} ms)")
+        else:
+            s.say("  own sounds not heard back (expected in a dry run)")
+    s.save()
+
+
 RANK = {"still": 0, "CHANGED": 1, "ADOPTED": 2, "MOVING": 3}
 
 
@@ -1096,7 +1151,7 @@ def main(argv=None):
         args.other = "8T" if args.phone == "POCO" else "POCO"
     tasks = {"task1": task1, "task2": task2, "task3": task3, "task5a": task3, "task5b": task3, "task4a": task4a,
              "task4c": task4c, "task5c": task5c, "task5d": task5d, "task5e": task5e, "task5f": task5f,
-             "task5g": task5g, "task5h": task5h, "look": task_look, "watch": task_watch, "nearfar": task_nearfar, "pingpong": task_pingpong}
+             "task5g": task5g, "task5h": task5h, "look": task_look, "watch": task_watch, "nearfar": task_nearfar, "pingpong": task_pingpong, "live": task_live}
     if args.task == "facts":
         s = Session(args.root, f"facts_{args.phone}")
         print(phone.facts(phone.serial_of(args.phone), s.rid("facts"), s.src))
