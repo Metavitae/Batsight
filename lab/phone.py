@@ -126,9 +126,19 @@ def start_together(jobs):
         t.join()
 
 
-def trigger(serial, run_id, what):
-    """Handshake signal for an 'armed' run: drop <id>.go or <id>.stop into the app's own folder."""
-    adb(serial, "shell", f"mkdir -p {SIGNALS} && touch {SIGNALS}/{run_id}.{what}")
+def trigger(serial, run_id, what, tries=10):
+    """Handshake signal for an 'armed' run: drop <id>.go or <id>.stop into the app's own folder.
+    Retries: on the real 8T the folder was once briefly 'missing' and the go never arrived (the phone
+    then waited its full minute). Success = the file was written OR the app already took it."""
+    last = ""
+    for _ in range(tries):
+        r = subprocess.run(["adb", "-s", serial, "shell", f"mkdir -p {SIGNALS}; touch {SIGNALS}/{run_id}.{what}"],
+                           capture_output=True, text=True, timeout=30)
+        if r.returncode == 0:
+            return True
+        last = (r.stderr or r.stdout).strip()
+        time.sleep(0.1)
+    raise RuntimeError(f"could not signal '{what}' to {serial}: {last}")
 
 
 def wait_for(serial, name, timeout=120, every=1.0):
