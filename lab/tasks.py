@@ -556,6 +556,134 @@ def task_nearfar(args):
     s.save()
 
 
+LONG = {"8T": "warp_rise", "POCO": "warp_fall"}
+
+
+def task_pingpong(args):
+    """Two-phone ping-pong (founder's idea, CC's design): A plays its long sound then a short near chirp,
+    B does the same half a cycle later, round after round. Every sound does two jobs: its own phone
+    hears the echoes (near/far view), the other phone hears it (phone-to-phone distance each round,
+    no shared clock). Start: handshake (both report 'recording', then both get 'go' together).
+    Record-then-analyse version; live 'drummer' timing comes later."""
+    A, B = args.phone, args.other
+    s = Session(args.root, f"pingpong_{A}_{B}")
+    a, b = phone.serial_of(A), phone.serial_of(B)
+    va, vb = load_levels(args.root).get(A, 8), load_levels(args.root).get(B, 9)
+    beat, cycles = 120, int(args.angle) if args.angle else 20
+    n_beat = int(beat / 1000 * RATE)
+    files, parts = {}, {}
+    for who, lead in ((A, 0), (B, 2)):
+        long_ = sounds.SOUNDS[LONG[who]]()
+        short = signals.reference(SHORT[who])
+        x = np.zeros(n_beat * (4 * cycles + 2) + len(long_))
+        longs_only = np.zeros_like(x)
+        for c in range(cycles):
+            k = (4 * c + lead) * n_beat
+            x[k:k + len(long_)] += long_
+            longs_only[k:k + len(long_)] += long_
+            k2 = k + n_beat
+            x[k2:k2 + len(short)] += short
+        fname = f"pingpong_{who}_{dt.datetime.now():%H%M%S}.wav"
+        wavio.write(s.work / fname, np.stack([x, x], axis=1), RATE)
+        files[who] = fname
+        parts[who] = dict(long=long_, short=short, longs_only=longs_only, lead=lead)
+    s.say(f"# The Batsight - two-phone ping-pong - {A} and {B}\n")
+    s.say(f"{A}: {LONG[A]} + short chirp; {B}: {LONG[B]} + short chirp, half a cycle later; a sound every {beat} ms, "
+          f"{cycles} rounds of {4 * beat} ms.")
+    phone.push_signal(a, s.work / files[A])
+    phone.push_signal(b, s.work / files[B])
+    ia, ib = s.rid("ppA"), s.rid("ppB")
+    phone.start_together([(a, "play-record", ia, dict(file=files[A], vol=va, pre=300, post=300, armed=True, role="first")),
+                          (b, "play-record", ib, dict(file=files[B], vol=vb, pre=300, post=300, armed=True, role="first"))])
+    for ser, rid in ((a, ia), (b, ib)):
+        phone.wait_for(ser, f"{rid}_recording.txt", 60, every=0.1)
+    import threading
+    th = [threading.Thread(target=phone.trigger, args=(ser, rid, "go")) for ser, rid in ((a, ia), (b, ib))]
+    [t.start() for t in th]; [t.join() for t in th]
+    for ser, rid in ((a, ia), (b, ib)):
+        phone.wait_for(ser, f"{rid}_played.txt", 120, every=0.2)
+    for ser, rid in ((a, ia), (b, ib)):
+        phone.trigger(ser, rid, "stop")
+    for ser, rid in ((a, ia), (b, ib)):
+        phone.wait_for(ser, f"{rid}.json", 60)
+        phone.pull(ser, rid, s.src)
+    rec = {A: analysis.mono(phone.Run(s.src, ia).rec), B: analysis.mono(phone.Run(s.src, ib).rec)}
+    for line in pingpong_lines(rec, parts, A, B, args.root):
+        s.say(line)
+    s.save()
+
+
+def pingpong_lines(rec, parts, A, B, root, self_m=0.1):
+    out = []
+    t = {}
+    for hearer in (A, B):
+        own = analysis.ping_train(rec[hearer], parts[hearer]["longs_only"], RATE)
+        t[(hearer, hearer)] = own
+        # blank out this phone's OWN sounds (much louder than the partner's) before looking for the partner
+        quiet = rec[hearer].copy()
+        if own:
+            off = int(round(own["offset"]))
+            full = np.abs(parts[hearer]["longs_only"]) > 0
+            full[[x + int(0.12 * RATE) + j for x in [a_ for a_, _ in analysis.bursts(parts[hearer]["longs_only"], RATE)]
+                  for j in range(len(parts[hearer]["short"])) if x + int(0.12 * RATE) + j < len(full)]] = True
+            idx = np.nonzero(full)[0] + off
+            pad = int(0.015 * RATE)
+            mask = np.zeros(len(quiet), dtype=bool)
+            for a_, b_ in analysis.bursts(full.astype(float), RATE):
+                mask[max(0, a_ + off - pad):max(0, b_ + off + pad)] = True
+            quiet[mask] = 0
+        other = B if hearer == A else A
+        t[(hearer, other)] = analysis.ping_train(quiet, parts[other]["longs_only"], RATE)
+    q = {k: (v["heard"], v["count"], v["snr_db"]) if v else (0, 0, 0) for k, v in t.items()}
+    out.append("- hearing check (rounds clearly heard / rounds, dB): " + "; ".join(
+        f"{h} hears {p}: {q[(h, p)][0]}/{q[(h, p)][1]} ({q[(h, p)][2]:.0f} dB)" for h, p in t))
+    ds = []
+    if all(t.values()):
+        n = min(len(v["arrivals"]) for v in t.values())
+        for k in range(n):
+            tAA, tAB = t[(A, A)]["arrivals"][k], t[(A, B)]["arrivals"][k]
+            tBB, tBA = t[(B, B)]["arrivals"][k], t[(B, A)]["arrivals"][k]
+            ok = min(t[(A, B)]["peaks"][k] / t[(A, B)]["noise"], t[(B, A)]["peaks"][k] / t[(B, A)]["noise"]) >= pair.HEARD
+            mism = abs((tAB - tAA) - (tBB - tBA)) / RATE
+            if ok and mism < 2 * pair.MAX_M / C:
+                ds.append(C / 2 * ((tAB - tAA) - (tBB - tBA)) / RATE + self_m)
+    if ds:
+        out.append(f"- phone-to-phone distance, {len(ds)} rounds: median {np.median(ds)*100:.1f} cm, spread "
+                   f"{np.std(ds)*100:.1f} cm (MEASURED; own speaker-mic assumed {self_m*100:.0f} cm each, UNCONFIRMED)")
+    else:
+        out.append("- phone-to-phone distance: NOT measured (the phones did not clearly hear each other)")
+    for who in (A, B):
+        p = parts[who]
+        lt = analysis.ping_train(rec[who], p["longs_only"], RATE)
+        if not lt:
+            out.append(f"- {who}: own sounds not found"); continue
+        off = int(round(lt["offset"]))
+        bl = analysis.bursts(p["longs_only"], RATE)
+        long_starts = [a_ for a_, _ in bl]
+        short_starts = [x + int(0.12 * RATE) for x in long_starts]
+        P_long = echo.profiles(np.r_[np.zeros(max(0, -off)), rec[who][max(0, off):]], p["long"], long_starts, RATE, max_m=6.0)[0]
+        P_short = echo.profiles(np.r_[np.zeros(max(0, -off)), rec[who][max(0, off):]], p["short"], short_starts, RATE, max_m=6.0)[0]
+        cf = Path(root) / "Art" / "Working" / f"nearfar_calib_{who}.npz"
+        cal = dict(np.load(cf)) if cf.exists() else {}
+        rr, hn, hf, stt = echo.near_far(P_short, P_long, RATE, p["short"], p["long"],
+                                        calib_near=cal.get("short"), calib_far=cal.get(LONG[who]) if LONG[who] in cal else None)
+        def runs(mask):
+            o, k = [], 0
+            while k < len(mask):
+                if mask[k]:
+                    j = k
+                    while j < len(mask) and mask[j]:
+                        j += 1
+                    o.append(f"{rr[k]*100:.0f}" if j - k < 3 else f"{rr[k]*100:.0f}-{rr[j-1]*100:.0f}")
+                    k = j
+                else:
+                    k += 1
+            return ", ".join(o[:14]) or "none"
+        out.append(f"- {who} own view ({'calibrated' if cal else 'NOT calibrated, ideal fade (UNCONFIRMED)'}): "
+                   f"ECHO {runs(stt == echo.ECHO)} cm; PROBABLE {runs(stt == echo.PROBABLE)} cm (MEASURED)")
+    return out
+
+
 RANK = {"still": 0, "CHANGED": 1, "ADOPTED": 2, "MOVING": 3}
 
 
@@ -932,11 +1060,11 @@ def main(argv=None):
     ap.add_argument("--sound", default="chirp", help="watch: chirp or warp_hyper")
     ap.add_argument("--dry", action="store_true", help="watch: run at volume 0 (silent check)")
     args = ap.parse_args(argv)
-    if args.task in ("task4c", "task5f", "task5h") and not args.other:
+    if args.task in ("task4c", "task5f", "task5h", "pingpong") and not args.other:
         args.other = "8T" if args.phone == "POCO" else "POCO"
     tasks = {"task1": task1, "task2": task2, "task3": task3, "task5a": task3, "task5b": task3, "task4a": task4a,
              "task4c": task4c, "task5c": task5c, "task5d": task5d, "task5e": task5e, "task5f": task5f,
-             "task5g": task5g, "task5h": task5h, "look": task_look, "watch": task_watch, "nearfar": task_nearfar}
+             "task5g": task5g, "task5h": task5h, "look": task_look, "watch": task_watch, "nearfar": task_nearfar, "pingpong": task_pingpong}
     if args.task == "facts":
         s = Session(args.root, f"facts_{args.phone}")
         print(phone.facts(phone.serial_of(args.phone), s.rid("facts"), s.src))

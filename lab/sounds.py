@@ -56,6 +56,15 @@ def warp_rise(rate=RATE, shadow=0.2):
     return _norm(env * (a + shadow * b), rate)
 
 
+def warp_fall(rate=RATE, shadow=0.2):
+    """Mirror of Warp rise (CC's pick for the second phone): straight sweep DOWN 15 -> 2 kHz with the same
+    faint shadow. Up vs down is the easiest pair to tell apart; both stay clean."""
+    a = _sweep(15000, 2000, 90, rate, log=False)
+    b = _sweep(7500, 1000, 90, rate, log=False)
+    env = np.linspace(1.0, 0.6, len(a))
+    return _norm(env * (a + shadow * b), rate)
+
+
 def warp_hyper(rate=RATE, every_ms=250, count=12):
     """Founder's choice: warp rise and hyperspace V, alternating, one every `every_ms`."""
     w, h = warp_rise(rate), hyperspace_v(rate)
@@ -131,7 +140,7 @@ def cross_db(a, b):
     return float(dsp.db(pb / pa))
 
 
-SOUNDS = {"warp_rise": warp_rise, "blaster_fall": blaster_fall, "scanner_warble": scanner_warble,
+SOUNDS = {"warp_fall": lambda rate=RATE: warp_fall(rate), "warp_rise": warp_rise, "blaster_fall": blaster_fall, "scanner_warble": scanner_warble,
           "hyperspace_v": hyperspace_v, "star_sparkle": star_sparkle, "console_chirp": console_chirp}
 
 

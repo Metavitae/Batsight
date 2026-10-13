@@ -53,7 +53,7 @@ class FakeWorld:
         # 'run' everything that is pending at once (two phones at the same time)
         todo = {k: v for k, v in self.pending.items()}
         self.pending.clear()
-        players = [(rid, o) for rid, (ser, m, o) in todo.items() if o.get("spec")]
+        players = [(rid, o) for rid, (ser, m, o) in todo.items() if o.get("spec") or o.get("file")]
         for rid, (ser, mode, opts) in todo.items():
             self._run(ser, mode, rid, opts, players)
 
@@ -86,7 +86,7 @@ class FakeWorld:
         for prid, popts in players:
             if prid == rid:
                 continue
-            p = signals.build(popts["spec"], RATE) * 0.3 * self.pair_gain * (0.1 * popts["vol"] if popts.get("vol", -1) >= 0 else 0.5)
+            p = (signals.build(popts["spec"], RATE) if popts.get("spec") else self.files[popts["file"]]) * 0.3 * self.pair_gain * (0.1 * popts["vol"] if popts.get("vol", -1) >= 0 else 0.5)
             k = int(self.eff_pre(popts) / 1000 * RATE + self.pair_distance / C * RATE)
             seg = p[:, 0] + p[:, 1]
             end = min(len(y), k + len(seg))

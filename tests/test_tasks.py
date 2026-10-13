@@ -116,3 +116,11 @@ def test_nearfar_calib_then_look(world, tmp_path):
     world.echoes.append((0.3, 0.05))
     rep = go(tmp_path, "nearfar", "--phone", "8T")
     assert "measured free-air response" in rep and "short (near view) sees echoes at" in rep
+
+
+def test_pingpong(world, tmp_path):
+    rep = go(tmp_path, "pingpong", "--phone", "8T", "--other", "POCO", "--angle", "8")
+    assert "hearing check" in rep and "own view" in rep
+    import re
+    m = re.search(r"phone-to-phone distance, \d+ rounds: median ([\d.]+) cm", rep)
+    assert m and 190 <= float(m.group(1)) <= 210, rep          # the fake phones are 2.0 m apart
