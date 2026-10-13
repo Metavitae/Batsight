@@ -480,6 +480,77 @@ def dry_report(s, r):
     s.save()
 
 
+SHORT = {"8T": "chirp,f0=2000,f1=20000,ms=5,db=-20", "POCO": "chirp,f0=2000,f1=15000,ms=5,db=-20"}
+
+
+def task_nearfar(args):
+    """Short and long sounds alternating (founder's idea): near view, far view, and the in-between zone
+    seen by both. --step calib = the phone held in free air (no objects within ~1 m): saves each sound's
+    real direct-sound response for later runs."""
+    step = args.step or "look"
+    s = Session(args.root, f"nearfar_{args.phone}_{step}")
+    serial = phone.serial_of(args.phone)
+    vol = find_level(s, args.root, args.phone, serial)
+    every, count = 120, 100
+    near_snd = signals.reference(SHORT[args.phone])
+    far_names = ["warp_rise", "hyperspace_v"]
+    far_snd = {n: sounds.SOUNDS[n]() for n in far_names}
+    n_every = int(every / 1000 * RATE)
+    longest = max(len(v) for v in far_snd.values())
+    x = np.zeros(n_every * count + longest)
+    starts = {"short": [], "warp_rise": [], "hyperspace_v": []}
+    for i in range(count):            # short, warp, short, hyper, ...
+        nm = "short" if i % 2 == 0 else far_names[(i // 2) % 2]
+        snd = near_snd if nm == "short" else far_snd[nm]
+        k = i * n_every
+        x[k:k + len(snd)] += snd
+        starts[nm].append(k)
+    fname = f"nearfar_{dt.datetime.now():%H%M%S}.wav"
+    wavio.write(s.work / fname, np.stack([x, x], axis=1), RATE)
+    phone.push_signal(serial, s.work / fname)
+    s.say(f"# The Batsight - near/far - {args.phone} - '{step}'\n")
+    s.say(f"Short: `{SHORT[args.phone]}`; long: Warp rise / Hyperspace V; alternating, one every {every} ms.")
+    r = run(s, serial, f"nearfar_{step}", file=fname, vol=vol, pre=300, post=300)
+    mono = analysis.mono(r.rec)
+    P = {nm: echo.profiles(mono, near_snd if nm == "short" else far_snd[nm], st, RATE, max_m=6.0)[0]
+         for nm, st in starts.items()}
+    cal_file = Path(args.root) / "Art" / "Working" / f"nearfar_calib_{args.phone}.npz"
+    if step == "calib":
+        np.savez(cal_file, **{nm: np.abs(p.mean(axis=0)) for nm, p in P.items()})
+        for nm, p in P.items():
+            env = np.abs(p.mean(axis=0)); rr = echo.range_axis(len(env), RATE)
+            ideal = echo.direct_tail(env, near_snd if nm == "short" else far_snd[nm], RATE)
+            for lv in (-40, -50):
+                real = rr[np.nonzero(env / env[0] < 10 ** (lv / 20))[0][:1]]
+                idl = rr[np.nonzero(ideal / env[0] < 10 ** (lv / 20))[0][:1]]
+                s.say(f"- {nm}: own sound below {lv} dB by {real[0]*100:.0f} cm (ideal {idl[0]*100:.0f} cm)" if len(real) and len(idl)
+                      else f"- {nm}: own sound never below {lv} dB within 6 m (MEASURED)")
+        s.say(f"- Free-air calibration saved: {cal_file.name}")
+    else:
+        cal = dict(np.load(cal_file)) if cal_file.exists() else {}
+        far = P["warp_rise"]   # one long sound per run; Hyperspace V is kept as a second opinion (TODO merge)
+        rr, hn, hf, st = echo.near_far(P["short"], far, RATE, near_snd, far_snd["warp_rise"],
+                                       calib_near=cal.get("short"), calib_far=cal.get("warp_rise"))
+        s.say(f"- calibration: {'measured free-air response' if cal else 'NONE yet, ideal fade used (UNCONFIRMED)'}")
+        def runs(mask):
+            out, k = [], 0
+            while k < len(mask):
+                if mask[k]:
+                    j = k
+                    while j < len(mask) and mask[j]:
+                        j += 1
+                    out.append(f"{rr[k]*100:.0f}-{rr[j-1]*100:.0f}")
+                    k = j
+                else:
+                    k += 1
+            return ", ".join(out[:14]) or "none"
+        s.say(f"- short (near view) sees echoes at: {runs(hn)} cm (MEASURED)")
+        s.say(f"- long (far view) sees echoes at: {runs(hf)} cm (MEASURED)")
+        s.say(f"- ECHO (agreed, or in the zone only one view can judge): {runs(st == echo.ECHO)} cm")
+        s.say(f"- PROBABLE (in-between zone, only one view saw it): {runs(st == echo.PROBABLE)} cm")
+    s.save()
+
+
 RANK = {"still": 0, "CHANGED": 1, "ADOPTED": 2, "MOVING": 3}
 
 
@@ -860,7 +931,7 @@ def main(argv=None):
         args.other = "8T" if args.phone == "POCO" else "POCO"
     tasks = {"task1": task1, "task2": task2, "task3": task3, "task5a": task3, "task5b": task3, "task4a": task4a,
              "task4c": task4c, "task5c": task5c, "task5d": task5d, "task5e": task5e, "task5f": task5f,
-             "task5g": task5g, "task5h": task5h, "look": task_look, "watch": task_watch}
+             "task5g": task5g, "task5h": task5h, "look": task_look, "watch": task_watch, "nearfar": task_nearfar}
     if args.task == "facts":
         s = Session(args.root, f"facts_{args.phone}")
         print(phone.facts(phone.serial_of(args.phone), s.rid("facts"), s.src))

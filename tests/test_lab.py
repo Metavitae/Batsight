@@ -304,3 +304,24 @@ def test_whompf_layer_does_not_disturb_echo_filter():
         e = np.abs(dsp.matched(sig, snd["warp_rise"]))
         return 20 * np.log10(np.median([e[k] for k in starts["warp_rise"][:8]]) / np.median(e))
     assert abs(clarity(x.mean(1)) - clarity((x - w).mean(1))) < 1.0
+
+
+def test_near_far_calibration_does_not_hide_far_walls():
+    rng = np.random.default_rng(5)
+    ref_s = signals.reference("chirp,f0=2000,f1=20000,ms=5,db=-20")
+    ref_l = signals.reference("chirp,f0=2000,f1=20000,ms=20,db=-20")
+    def profs(ref, echoes, n=40):
+        played = np.concatenate([np.zeros(2000), ref, np.zeros(RATE // 10)])
+        out = []
+        for i in range(n):
+            rec = sim.room(played[:, None].repeat(2, 1), RATE, echoes=echoes, noise_db=-80, seed=i)
+            p, _, _ = echo.profiles(rec.mean(1) if rec.ndim == 2 else rec, ref, [2000], RATE, max_m=4.0)
+            out.append(p[0])
+        return np.array(out)
+    calib = profs(ref_l, [(2.5, 0.05)])                    # free air near, but a wall at 2.5 m
+    look = profs(ref_l, [(2.5, 0.05), (0.3, 0.05)])
+    near = profs(ref_s, [(2.5, 0.05), (0.3, 0.05)])
+    r, hn, hf, st = echo.near_far(near, look, RATE, ref_s, ref_l, calib_far=np.abs(calib.mean(0)),
+                                  calib_near=np.abs(profs(ref_s, [(2.5, 0.05)]).mean(0)))
+    wall = (r > 2.45) & (r < 2.55)
+    assert (st[wall] == echo.ECHO).any()                  # the wall is NOT hidden by the calibration

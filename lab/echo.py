@@ -305,3 +305,43 @@ def watch(profs, rate, every_s, lo_m=0.3, hi_m=4.0, fast_n=4, slow_s=15.0, z=4.0
                 slow = (1 - alpha) * slow + alpha * profs[i]
         out.append((state, where, n))
     return out
+
+
+def near_far(near_profs, far_profs, rate, near_ref, far_ref, near_max_m=0.6, far_min_m=2.0, tail_margin_db=10.0,
+             calib_near=None, calib_far=None, calib_free_m=0.8):
+    """Founder's idea: alternate SHORT sounds (own fade gone within ~0.3 m: near objects) and LONG sounds
+    (more energy: far objects). Each distance gets the view that can judge it; the middle zone
+    (near_max_m..far_min_m) gets BOTH, and they must agree:
+      both see an echo -> ECHO;  only one sees it -> PROBABLE (never clear);  neither -> UNKNOWN
+    (silence never earns CLEAR here; that needs the 'sound went through' rule).
+    calib_*: the measured free-air direct-sound response of each sound (replaces the ideal fade).
+    Returns (range axis, near hits, far hits, state per distance)."""
+    def hits(profs, ref, calib):
+        env = np.abs(profs.mean(axis=0))
+        noise = noise_level(profs) / np.sqrt(len(profs))
+        tail = direct_tail(env, ref, rate)
+        if calib is not None:
+            # Trust the free-air calibration only where it really was free air (~0.8 m); beyond that a
+            # calibration also holds the room's walls, which must NOT become 'the phone's own sound'.
+            # There, continue the measured fade along the ideal shape (never below the ideal).
+            c = np.zeros(len(env)); m_ = min(len(env), len(calib)); c[:m_] = calib[:m_] * env[0] / (calib[0] + 1e-20)
+            cut = min(len(env) - 1, int(np.ceil(2 * calib_free_m / C * rate)))
+            factor = max(1.0, c[cut] / (tail[cut] + 1e-30))
+            tail = np.concatenate([np.maximum(c[:cut], tail[:cut]), tail[cut:] * factor])
+        floor = np.maximum(6 * noise, tail * 10 ** (tail_margin_db / 20))
+        h = env > floor
+        h[:blank_bins(rate, 0.15)] = False
+        return h
+    n = min(near_profs.shape[1], far_profs.shape[1])
+    hn = hits(near_profs, near_ref, calib_near)[:n]
+    hf = hits(far_profs, far_ref, calib_far)[:n]
+    r = range_axis(n, rate)
+    st = np.array([UNKNOWN] * n, dtype=object)
+    near = r < near_max_m
+    far = r > far_min_m
+    mid = ~near & ~far
+    st[near & hn] = ECHO
+    st[far & hf] = ECHO
+    st[mid & hn & hf] = ECHO
+    st[mid & (hn ^ hf)] = PROBABLE
+    return r, hn, hf, st

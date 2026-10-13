@@ -108,3 +108,11 @@ def test_watch_warp_hyper(world, tmp_path):
 def test_watch_dry_is_silent(world, tmp_path):
     rep = go(tmp_path, "watch", "--phone", "8T", "--angle", "5", "--sound", "warp_hyper", "--dry")
     assert "DRY RUN at volume 0" in rep
+
+
+def test_nearfar_calib_then_look(world, tmp_path):
+    rep = go(tmp_path, "nearfar", "--phone", "8T", "--step", "calib")
+    assert "Free-air calibration saved" in rep
+    world.echoes.append((0.3, 0.05))
+    rep = go(tmp_path, "nearfar", "--phone", "8T")
+    assert "measured free-air response" in rep and "short (near view) sees echoes at" in rep
