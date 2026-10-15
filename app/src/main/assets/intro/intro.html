@@ -25,6 +25,7 @@ padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(
 </head><body>
 <script src="three.min.js"></script>   <!-- APP: bundled r128 -->
 <script src="sounds.js"></script>     <!-- APP: the founder's original WAV pings -->
+<script src="music.js"></script>      <!-- APP: intro music grown from the Warp ping (tools/intro_music.py) -->
 
 <div id="stage" aria-label="Kithe presents The Batsight, 3D version">
 <div id="box">
@@ -153,7 +154,7 @@ var ang=base+k*Math.PI/2+(r()-0.5)*0.9;                       // each shape gets
 ox[sh]=CEN[sh][0]+Math.cos(ang)*R[sh]; oy[sh]=CEN[sh][1]+Math.sin(ang)*R[sh];
 order[sh]=k;
 });
-return {bat:batTimes(),ord:ord,order:order,D:D,S:S,ox:ox,oy:oy,R:R,yaw:(r()-0.5)*0.7,ph:r()*6.28,sound:r()<0.5?"warp":"hyper"};
+return {bat:batTimes(),ord:ord,order:order,D:D,S:S,ox:ox,oy:oy,R:R,yaw:(r()-0.5)*0.7,ph:r()*6.28,sound:"warp"}   /* APP: founder 2026-10-15 "The warp one sounds better" */;
 }
 function batTimes(){
 var out=[], t=EYE_T, d=0.13;
@@ -231,7 +232,8 @@ if(ctx) return Promise.resolve();
 var AC=window.AudioContext||window.webkitAudioContext; if(!AC) return Promise.resolve();
 ctx=new AC();
 function dec(b){return new Promise(function(res){try{var p=ctx.decodeAudioData(b64buf(b),res,function(){res(null)});if(p&&p.then)p.then(res,function(){res(null)});}catch(e){res(null)}});}
-return Promise.all([dec(WARP),dec(HYPER)]).then(function(r){bufs.warp=r[0];bufs.hyper=r[1];});
+var M=window.INTRO_MUSIC||{};   // APP: music (bed + four petal bells)
+return Promise.all([dec(WARP),dec(HYPER),dec(M.bed_warp),dec(M.note0_warp),dec(M.note1_warp),dec(M.note2_warp),dec(M.note3_warp)]).then(function(r){bufs.warp=r[0];bufs.hyper=r[1];bufs.bed=r[2];bufs.notes=r.slice(3);});
 }
 function schedule(P,t0){
 if(!ctx) return;
@@ -244,11 +246,15 @@ if(lp){ var f=ctx.createBiquadFilter(); f.type="lowpass"; f.frequency.value=lp; 
 else s.connect(g);                                                                                                                   // APP: main pings unfiltered
 s.start(t0+at); live.push(s);
 }
+var PING=2.51;   // APP: founder 2026-10-15 "more weight, more presence": pings at -12 dBFS (were -20), rule relaxed for the intro
+function clip(b,at,gain){ if(!b) return; var s=ctx.createBufferSource(); s.buffer=b; var g=ctx.createGain(); g.gain.value=gain; s.connect(g); g.connect(master); s.start(t0+at); live.push(s); }
+clip(bufs.bed,0,1);                                                       // APP: warm bed: pad, riser under the Batsight pings, whompf + bloom on the eye
+P.ord.forEach(function(sh,k){ clip(bufs.notes&&bufs.notes[k],P.D[sh],1); });   // APP: each petal rings its bell note (D4, F#4, A4, D5 in the order found)
 P.ord.forEach(function(sh,k){
-play(P.S[sh],1,0.85,0);                    // one ping per shape: the app's sound (peak about -21 dBFS)
-play(P.D[sh],RATES[k],0.28,9000);           // its echo, when the ring finds the shape: same sound about 11 dB quieter (about -31 dBFS), softened, rising steps
+play(P.S[sh],1,PING,0);                    // one ping per shape: the app's sound (APP: peak about -12 dBFS)
+play(P.D[sh],RATES[k],0.28*PING,9000);           // its echo, when the ring finds the shape: same sound about 11 dB quieter (APP: about -23 dBFS), softened, rising steps
 });
-P.bat.forEach(function(b){ play(b.t,1,b.g,0); });   // The Batsight's part: faster and faster until the eye closes
+P.bat.forEach(function(b){ play(b.t,1,b.g*PING,0); });   // The Batsight's part: faster and faster until the eye closes
 }
 function stopAudio(){live.forEach(function(s){try{s.stop()}catch(e){}});live=[];}
 
