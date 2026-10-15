@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Kithe presents The Batsight</title>
+<style>
+/* App copy of Chat's design (Art/Working "Kithe intro - 3D Kithe and 3D eye (2026-10-15).html"). Changes are marked APP. */
+@font-face{font-family:"Outfit";font-weight:500 600;src:url(outfit.woff2) format("woff2")}   /* APP: bundled, works offline */
+/* Layout: one dark stage. WebGL canvas (Kithe in 3D) under one SVG (sonar rings, text, Open Eye); a quiet control line below. */
+:root{
+--bg:#0B1526; --ink:#E6EEFF; --muted:#9AAED0; --line:#8FE8F2;
+--font:"Outfit","Futura","Century Gothic",system-ui,sans-serif;
+color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--font);overflow:hidden;
+padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+#stage{position:fixed;inset:0;transition:opacity .3s ease;display:flex;align-items:center;justify-content:center}
+#box{position:relative;width:min(100vw,73.6vh);height:min(125vw,92vh);max-width:100%}
+#gl,#svg{position:absolute;left:0;top:0;width:100%;height:100%;display:block}
+#svg{overflow:visible}
+[hidden]{display:none!important}
+</style>
+</head><body>
+<script src="three.min.js"></script>   <!-- APP: bundled r128 -->
+<script src="sounds.js"></script>     <!-- APP: the founder's original WAV pings -->
+
+<div id="stage" aria-label="Kithe presents The Batsight, 3D version">
+<div id="box">
+<canvas id="gl"></canvas>
+<svg id="svg" viewBox="0 0 400 500" role="img" aria-label="Kithe's four shapes in 3D are found one by one by sonar rings, first as green blueprints, then in their own colours, and then they melt into The Batsight's eye logo">
+<defs>
+<filter id="blur2" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3"/></filter>
+<clipPath id="clipe"><rect x="-30" y="-60" width="180" height="178"/></clipPath>
+</defs>
+<g id="rings"></g>
+<g id="echoes"></g>
+<text id="presents" x="200" y="352" text-anchor="middle" fill="#9AAED0" font-family="Outfit, Futura, sans-serif" font-weight="500" font-size="13" letter-spacing="6" opacity="0">KITHE PRESENTS</text>
+
+<g id="still" opacity="0">   <!-- APP: flat Open Eye (approved logo, finished state) for calm mode and phones without WebGL -->
+<g transform="translate(200 188) scale(1.7) translate(-60 -60)">
+<path d="M14 60 Q60 4 106 60 Q60 116 14 60 Z" fill="#8FE8F2" opacity="0.14"/>
+<g fill="none" stroke="#8FE8F2" stroke-width="5" stroke-linecap="round"><path d="M14 60 Q60 4 106 60"/><path d="M14 60 Q60 116 106 60"/></g>
+<circle cx="60" cy="60" r="20" fill="#4D8DFF" fill-opacity="0.25"/><circle cx="60" cy="60" r="13" fill="#4D8DFF"/>
+</g></g>
+<text id="name" x="200" y="352" text-anchor="middle" fill="#E6EEFF" font-family="Outfit, Futura, sans-serif" font-weight="600" font-size="40" letter-spacing="0.4" opacity="0">The Batsight</text>
+<text id="tag" x="200" y="384" text-anchor="middle" fill="#9AAED0" font-family="Outfit, Futura, sans-serif" font-weight="500" font-size="11.5" letter-spacing="3.2" opacity="0">SEEING WITH SOUND</text>
+</svg>
+</div>
+</div>
+
+
+<script>
+(function(){
+"use strict";
+var WARP=window.INTRO_SOUNDS.warp, HYPER=window.INTRO_SOUNDS.hyper;   // APP: the original WAV pings (peak -20 dBFS)
+var END=12.8;           // seconds: intro finished, app would open here
+var LOGO0=5.2;          // when the Open Eye sequence starts
+var LOGO_CLAMP=6.3;     // the eye sequence is held here (no fade-out)
+var EYE_T=LOGO0+3.525;  // the eye closes
+var BAT_FROM=5.6;       // The Batsight's pings start here
+var MELT0=4.7, MELT1=5.8;
+var q=new URLSearchParams(location.search);   // APP: the app passes calm=1 (Android "remove animations") and mute=1 (phone on silent/vibrate)
+var reduce=q.get("calm")==="1"||!!(window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches);
+var mute=q.get("mute")==="1";
+var App=window.Intro||{done:function(){},stats:function(){}};   // APP: bridge to the Android app
+var $=function(id){return document.getElementById(id)};
+var clamp=function(x,a,b){a=a===undefined?0:a;b=b===undefined?1:b;return Math.min(b,Math.max(a,x))};
+var seg=function(t,a,b){return clamp((t-a)/(b-a))};
+var sm=function(x){x=clamp(x);return x*x*(3-2*x)};
+function lerp(t,k){ if(t<=k[0][0])return k[0][1]; for(var i=1;i<k.length;i++){ if(t<=k[i][0]){var a=k[i-1],b=k[i];return a[1]+(b[1]-a[1])*(t-a[0])/(b[0]-a[0]);} } return k[k.length-1][1]; }
+
+/* ---- Kithe shapes (geometry from the Kithe logo, 1024 px source), as path steps ---- */
+var SC=0.62, BX=514, BY=511.5, CXK=200, CYK=188;
+var DEFS=[
+{n:"upper stem",c:"#2c8b9c",p:[["M",360,511.5],["L",360,371],["Q",360,363,368,363],["L",398,363],["Q",468,363,468,433],["L",468,511.5]],cen:[414,437]},
+{n:"lower stem",c:"#1b5c7d",p:[["M",360,511.5],["L",360,605],["Q",360,660,415,660],["L",398,660],["Q",468,660,468,590],["L",468,511.5]],cen:[414,585]},
+{n:"upper leaf",c:"#35b77e",p:[["M",468,511.5],["Q",668,511.5,668,363],["Q",468,363,468,511.5]],cen:[560,425]},
+{n:"lower leaf",c:"#2c8f73",p:[["M",468,511.5],["Q",668,511.5,668,660],["Q",468,660,468,511.5]],cen:[560,600]}
+];
+var CEN=DEFS.map(function(d){return [CXK+(d.cen[0]-BX)*SC, CYK+(d.cen[1]-BY)*SC];});
+var RATES=[0.84,0.89,0.94,1.0];
+
+/* ---- 3D (three.js): extruded shapes with a green blueprint outline that turn into their own colours ---- */
+var renderer=null, scene, camera, kg3, parts=[], BP=null, pivot=null, L3={};
+function cv(x,y){return [(x-BX)*SC, -(y-BY)*SC];}
+function buildShape(ops){
+var s=new THREE.Shape(), a;
+ops.forEach(function(o){
+if(o[0]==="M"){a=cv(o[1],o[2]);s.moveTo(a[0],a[1]);}
+else if(o[0]==="L"){a=cv(o[1],o[2]);s.lineTo(a[0],a[1]);}
+else {var c=cv(o[1],o[2]),e=cv(o[3],o[4]);s.quadraticCurveTo(c[0],c[1],e[0],e[1]);}
+});
+s.closePath(); return s;
+}
+function init3D(){
+if(typeof THREE==="undefined") return;
+try{ renderer=new THREE.WebGLRenderer({canvas:$("gl"),alpha:true,antialias:true}); }catch(e){ renderer=null; return; }
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+renderer.setClearColor(0x000000,0); renderer.outputEncoding=THREE.sRGBEncoding;   // colours match the logo hex values
+scene=new THREE.Scene();
+camera=new THREE.PerspectiveCamera(31.07,0.8,10,3000);   // at z=900 the plane z=0 spans exactly the 400x500 stage
+camera.position.set(0,0,900); camera.lookAt(0,0,0);
+scene.add(new THREE.AmbientLight(0xffffff,0.72));
+var key=new THREE.DirectionalLight(0xffffff,0.55); key.position.set(160,300,500); scene.add(key);
+var fill=new THREE.DirectionalLight(0x8fe8f2,0.12); fill.position.set(-300,-120,300); scene.add(fill);
+kg3=new THREE.Group(); kg3.position.set(0,250-CYK,0); scene.add(kg3);
+BP=new THREE.Color("#54e0a0").convertSRGBToLinear();
+DEFS.forEach(function(d){
+var geo=new THREE.ExtrudeGeometry(buildShape(d.p),{depth:22,bevelEnabled:true,bevelThickness:3,bevelSize:3,bevelSegments:3,curveSegments:32});
+geo.translate(0,0,-11);
+var mat=new THREE.MeshStandardMaterial({color:BP.clone(),roughness:0.34,metalness:0.12,transparent:true,opacity:0,emissive:new THREE.Color("#3fe0a0").convertSRGBToLinear(),emissiveIntensity:0});
+var mesh=new THREE.Mesh(geo,mat);
+var lm=new THREE.LineBasicMaterial({color:new THREE.Color("#7dffc0").convertSRGBToLinear(),transparent:true,opacity:0});
+var lines=new THREE.LineSegments(new THREE.EdgesGeometry(geo,25),lm);
+var g=new THREE.Group(); g.add(mesh); g.add(lines); g.visible=false; kg3.add(g);
+parts.push({g:g,mat:mat,lm:lm,col:new THREE.Color(d.c).convertSRGBToLinear()});
+});
+
+/* The Open Eye in 3D: same lines, timing and colours as the approved logo; lines are glowing tubes, the pupil is a glossy sphere */
+renderer.localClippingEnabled=true;
+var planes=[new THREE.Plane(new THREE.Vector3(0,1,0),36.6), new THREE.Plane(new THREE.Vector3(0,-1,0),266)];   // the bounce floor and the top edge of the logo box (stage units)
+var CY=new THREE.Color("#8FE8F2").convertSRGBToLinear(), PB=new THREE.Color("#4D8DFF").convertSRGBToLinear();
+pivot=new THREE.Group(); pivot.position.set(0,62,0); pivot.scale.set(1.7,-1.7,1.7); scene.add(pivot);   // eye centre; y is flipped so logo units (y down) work as in the flat logo
+var inner=new THREE.Group(); inner.position.set(-60,-60,0); pivot.add(inner);
+var curve=new THREE.QuadraticBezierCurve3(new THREE.Vector3(14,0,0),new THREE.Vector3(60,56,0),new THREE.Vector3(106,0,0));
+var tube=new THREE.TubeGeometry(curve,56,2.5,14,false);
+function lineMesh(){ var m=new THREE.MeshStandardMaterial({color:CY,emissive:CY,emissiveIntensity:0.22,roughness:0.4,metalness:0.1,transparent:true,opacity:0,side:THREE.DoubleSide,clippingPlanes:planes}); return {mesh:new THREE.Mesh(tube,m),m:m}; }
+["f1","t1","t2","t3","s1"].forEach(function(id){
+var a=lineMesh(), g=new THREE.Group(); g.add(a.mesh); g.visible=false; inner.add(g); L3[id]={g:g,m:a.m};
+if(id!=="s1"){ var b=lineMesh(), mw=new THREE.Group(), g2=new THREE.Group(); mw.position.y=236; mw.scale.y=-1; g2.add(b.mesh); g2.visible=false; mw.add(g2); inner.add(mw); L3[id+"m"]={g:g2,m:b.m}; }
+});
+var ls=new THREE.Shape(); ls.moveTo(14,60); ls.quadraticCurveTo(60,4,106,60); ls.quadraticCurveTo(60,116,14,60);
+L3.lens=new THREE.Mesh(new THREE.ShapeGeometry(ls,32),new THREE.MeshBasicMaterial({color:CY,transparent:true,opacity:0,side:THREE.DoubleSide,depthWrite:false})); L3.lens.position.z=-2; L3.lens.visible=false; inner.add(L3.lens);
+L3.halo=new THREE.Mesh(new THREE.CircleGeometry(20,48),new THREE.MeshBasicMaterial({color:PB,transparent:true,opacity:0,depthWrite:false})); L3.halo.position.set(60,60,-3); L3.halo.visible=false; inner.add(L3.halo);
+L3.pup=new THREE.Mesh(new THREE.SphereGeometry(13,48,32),new THREE.MeshStandardMaterial({color:PB,emissive:PB,emissiveIntensity:0.25,roughness:0.22,metalness:0.15,transparent:true,opacity:0})); L3.pup.position.set(60,60,0); L3.pup.visible=false; inner.add(L3.pup);
+resize();
+}
+function resize(){ if(!renderer) return; var b=$("box"); renderer.setSize(b.clientWidth,b.clientHeight,false); }
+window.addEventListener("resize",resize);
+
+/* ---- random plan for one play ---- */
+function rng(seed){var a=seed>>>0;return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;}}
+function makePlan(seed){
+var r=rng(seed===undefined?(Math.random()*4294967296):seed);
+var ord=[0,1,2,3]; for(var i=3;i>0;i--){var j=Math.floor(r()*(i+1));var t=ord[i];ord[i]=ord[j];ord[j]=t;}   // which shape is found 1st, 2nd, 3rd, 4th
+var D=[],S=[],ox=[],oy=[],R=[],order=[];
+var d0=1.02+r()*0.12, gap=0.8+r()*0.06, tr=0.55, base=r()*Math.PI*2;
+ord.forEach(function(sh,k){
+D[sh]=d0+gap*k; S[sh]=D[sh]-tr; R[sh]=250+r()*50;
+var ang=base+k*Math.PI/2+(r()-0.5)*0.9;                       // each shape gets its own ring from its own direction
+ox[sh]=CEN[sh][0]+Math.cos(ang)*R[sh]; oy[sh]=CEN[sh][1]+Math.sin(ang)*R[sh];
+order[sh]=k;
+});
+return {bat:batTimes(),ord:ord,order:order,D:D,S:S,ox:ox,oy:oy,R:R,yaw:(r()-0.5)*0.7,ph:r()*6.28,sound:r()<0.5?"warp":"hyper"};
+}
+function batTimes(){
+var out=[], t=EYE_T, d=0.13;
+while(t>=BAT_FROM){ out.unshift({t:t}); t-=d; d*=1.22; }
+out.forEach(function(b,i){ b.g=0.35+0.65*Math.pow(i/(out.length-1),1.3); });
+return out;
+}
+
+/* ---- 2D layer: rings, echoes ---- */
+var NS="http://www.w3.org/2000/svg", ringsG=$("rings"), echoesG=$("echoes"), ringEls=[], echoEls=[];
+function mk(tag,at,parent){var e=document.createElementNS(NS,tag);for(var k in at)e.setAttribute(k,at[k]);parent.appendChild(e);return e;}
+for(var i=0;i<4;i++){
+ringEls.push({glow:mk("circle",{fill:"none",stroke:"#8FE8F2","stroke-width":7,opacity:0,filter:"url(#blur2)"},ringsG),
+core:mk("circle",{fill:"none",stroke:"#BFF4FA","stroke-width":1.6,opacity:0},ringsG),
+dot:mk("circle",{r:4,fill:"#8FE8F2",opacity:0},ringsG)});
+echoEls.push(mk("circle",{fill:"none",stroke:DEFS[i].c,"stroke-width":1.4,opacity:0},echoesG));
+}
+
+/* ---- draw one moment of the intro ---- */
+function setT(id,y,o){var e=L3[id]; if(!e) return; e.g.position.y=y; e.m.opacity=o; e.g.visible=o>0.002;}
+function frame(T,P){
+var melt=sm(seg(T,MELT0,MELT1));
+for(var i=0;i<4;i++){
+var S=P.S[i],D=P.D[i],R=P.R[i],el=ringEls[i];
+var rad=0,op=0;
+if(T>=S){ rad=T<=D?R*(T-S)/(D-S):R+120*(T-D)/0.95; op=sm(seg(T,S,S+0.1))*(1-sm(seg(T,D+0.1,D+0.95)))*0.9; }
+[el.glow,el.core].forEach(function(c,n){c.setAttribute("cx",P.ox[i]);c.setAttribute("cy",P.oy[i]);c.setAttribute("r",Math.max(0,rad).toFixed(1));c.setAttribute("opacity",(op*(n?0.85:0.3)).toFixed(3));});
+el.dot.setAttribute("cx",P.ox[i]);el.dot.setAttribute("cy",P.oy[i]);el.dot.setAttribute("opacity",(sm(seg(T,S-0.02,S+0.06))*(1-sm(seg(T,S+0.06,S+0.5)))).toFixed(3));
+var ea=T-D,e=echoEls[i];
+if(ea>0&&ea<1.1){e.setAttribute("cx",CEN[i][0]);e.setAttribute("cy",CEN[i][1]);e.setAttribute("r",(6+ea*62).toFixed(1));e.setAttribute("opacity",(0.5*(1-ea/1.1)*(1-melt)).toFixed(3));} else e.setAttribute("opacity","0");
+}
+$("presents").setAttribute("opacity",(sm(seg(T,4.1,4.6))*(1-sm(seg(T,4.95,5.35)))).toFixed(3));
+
+/* Kithe in 3D */
+if(renderer){
+var amp=1-0.65*sm(seg(T,3.9,4.7));
+kg3.rotation.y=(P.yaw+0.42*Math.sin(T*0.9+P.ph))*amp;
+kg3.rotation.x=0.14*Math.sin(T*0.7+P.ph*1.7)*amp;
+kg3.position.z=-260*melt; var sc=1-0.22*melt; kg3.scale.set(sc,sc,sc);
+parts.forEach(function(p,i){
+var D=P.D[i], k=P.order[i];
+var appear=sm(seg(T,D,D+0.2));
+var next=k<3?P.D[P.ord[k+1]]:D+0.55, cp=sm(seg(T,next,next+0.6));
+p.g.visible=appear>0.001;
+p.mat.color.copy(BP).lerp(p.col,cp);
+p.mat.opacity=appear*(0.18+0.82*cp)*(1-melt);
+p.mat.emissiveIntensity=appear*Math.exp(-Math.max(0,T-D)/0.4)*0.9*(1-cp);
+p.lm.opacity=appear*(1-0.85*cp)*(1-melt);
+});
+}
+
+/* Open Eye logo, same keyframes as the approved logo (seconds of its own 11 s loop) */
+var L=Math.min(Math.max(T-LOGO0,0),LOGO_CLAMP);
+var o=function(k){return lerp(L,k)};
+var oF=o([[0,0],[0.15,0],[0.2,1],[8.8,1]]);
+setT("f1",lerp(L,[[0,-90],[0.2,-90],[3.525,176]]),oF); setT("f1m",lerp(L,[[0,-90],[0.2,-90],[3.525,176]]),oF);
+var t1y=lerp(L,[[0,-90],[0.5625,-90],[3.237,124]]),t1o=o([[0,0],[0.5125,0],[0.5625,1],[2.912,1],[3.237,0]]);
+var t2y=lerp(L,[[0,-90],[0.925,-90],[3.6,124]]),t2o=o([[0,0],[0.875,0],[0.925,1],[3.275,1],[3.6,0]]);
+var t3y=lerp(L,[[0,-90],[1.2875,-90],[3.9625,124]]),t3o=o([[0,0],[1.2375,0],[1.2875,1],[3.6375,1],[3.9625,0]]);
+setT("t1",t1y,t1o);setT("t1m",t1y,t1o);setT("t2",t2y,t2o);setT("t2m",t2y,t2o);setT("t3",t3y,t3o);setT("t3m",t3y,t3o);
+setT("s1",lerp(L,[[0,-90],[1.65,-90],[3.525,60]]),o([[0,0],[1.6,0],[1.65,1],[8.8,1]]));
+if(L3.lens){L3.lens.material.opacity=o([[0,0],[3.425,0],[4.225,0.14],[8.8,0.14]]);L3.lens.visible=L3.lens.material.opacity>0.002;}
+var pu=o([[0,0],[3.525,0],[4.425,1],[8.8,1]]), ps=lerp(L,[[0,0.3],[3.525,0.3],[4.425,1]]);
+if(L3.pup){L3.pup.material.opacity=pu;L3.pup.scale.setScalar(ps);L3.pup.visible=pu>0.002;L3.halo.material.opacity=0.25*pu;L3.halo.scale.setScalar(ps);L3.halo.visible=pu>0.002;}
+var tx=o([[0,0],[3.825,0],[4.825,1],[9,1]]);
+$("name").setAttribute("opacity",tx.toFixed(3)); $("tag").setAttribute("opacity",tx.toFixed(3));
+if(renderer){ if(pivot){ pivot.rotation.y=0.30*Math.sin(Math.max(T-LOGO0,0)*1.15)*sm(seg(T,LOGO0+0.6,LOGO0+2.2)); pivot.rotation.x=0.10*Math.sin(Math.max(T-LOGO0,0)*0.85)*sm(seg(T,LOGO0+0.6,LOGO0+2.2)); } renderer.render(scene,camera); }
+}
+
+/* ---- sound: the app's own sonar sounds (Warp rise, Hyperspace V), unchanged except volume, filter and small pitch steps ---- */
+var ctx=null, bufs={}, live=[];
+function b64buf(s){var bin=atob(s),u=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return u.buffer;}
+function loadAudio(){
+if(ctx) return Promise.resolve();
+var AC=window.AudioContext||window.webkitAudioContext; if(!AC) return Promise.resolve();
+ctx=new AC();
+function dec(b){return new Promise(function(res){try{var p=ctx.decodeAudioData(b64buf(b),res,function(){res(null)});if(p&&p.then)p.then(res,function(){res(null)});}catch(e){res(null)}});}
+return Promise.all([dec(WARP),dec(HYPER)]).then(function(r){bufs.warp=r[0];bufs.hyper=r[1];});
+}
+function schedule(P,t0){
+if(!ctx) return;
+var buf=bufs[P.sound]; if(!buf) return;
+var master=ctx.createGain(); master.gain.value=0.98; master.connect(ctx.destination);   // APP: 0.17 dB headroom so the phone's resampler can't pass -20 dBFS
+function play(at,rate,gain,lp){
+var s=ctx.createBufferSource(); s.buffer=buf; s.playbackRate.value=rate;
+var g=ctx.createGain(); g.gain.value=gain; g.connect(master);
+if(lp){ var f=ctx.createBiquadFilter(); f.type="lowpass"; f.frequency.value=lp; f.Q.value=-3.0103; s.connect(f); f.connect(g); }   // APP: flat (Butterworth) filter; the default one boosts near the cutoff and pushed the Hyperspace echoes to -29.8 dBFS at 117 ms
+else s.connect(g);                                                                                                                   // APP: main pings unfiltered
+s.start(t0+at); live.push(s);
+}
+P.ord.forEach(function(sh,k){
+play(P.S[sh],1,0.85,0);                    // one ping per shape: the app's sound (peak about -21 dBFS)
+play(P.D[sh],RATES[k],0.28,9000);           // its echo, when the ring finds the shape: same sound about 11 dB quieter (about -31 dBFS), softened, rising steps
+});
+P.bat.forEach(function(b){ play(b.t,1,b.g,0); });   // The Batsight's part: faster and faster until the eye closes
+}
+function stopAudio(){live.forEach(function(s){try{s.stop()}catch(e){}});live=[];}
+
+/* ---- playback (APP: plays by itself, tap skips with a 0.3 s fade, then hands over to the app) ---- */
+var raf=0, t0=0, P=null, running=false, finished=false, frames=0, worst=0, last=0, gl=false;
+function finish(how){
+if(finished) return; finished=true; cancelAnimationFrame(raf); running=false; stopAudio();
+var T=(performance.now()-t0)/1000;
+App.stats(JSON.stringify({how:how,at_s:+T.toFixed(2),webgl:gl,calm:reduce,mute:mute,sound:P&&P.sound,audio:ctx?ctx.state:"none",
+  sample_rate:ctx?ctx.sampleRate:0,frames:frames,avg_fps:frames&&T>0?+(frames/Math.min(T,END)).toFixed(1):0,worst_frame_ms:+worst.toFixed(1)}));
+$("stage").style.opacity="0";
+setTimeout(function(){App.done();},how==="skipped"?300:350);
+}
+function loop(now){
+var T=(now-t0)/1000;
+if(last){ var dt=now-last; if(dt>worst) worst=dt; } last=now; frames++;
+if(T>=END){ frame(END,P); finish("ended"); return; }
+frame(T,P); raf=requestAnimationFrame(loop);
+}
+function still(){
+if(renderer) frame(END,P); else { $("still").setAttribute("opacity","1"); $("name").setAttribute("opacity","1"); $("tag").setAttribute("opacity","1"); }
+}
+function play(){
+running=true; P=makePlan(); frame(0,P);
+var go=function(){ schedule(P,ctx?ctx.currentTime+0.05:0); t0=performance.now()+50; raf=requestAnimationFrame(loop); };
+if(mute) go(); else loadAudio().then(function(){ if(ctx&&ctx.state==="suspended"){ctx.resume().then(go,go);} else go(); });
+}
+$("stage").addEventListener("pointerdown",function(){ finish("skipped"); });
+
+init3D(); gl=!!renderer;
+if(reduce||!gl){ P=makePlan(1); still(); t0=performance.now(); setTimeout(function(){finish(reduce?"calm":"no-webgl");},2500); }   // still logo for 2.5 s; a tap skips
+else play();
+})();
+</script>

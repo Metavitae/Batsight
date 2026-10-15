@@ -25,6 +25,7 @@ class MainActivity : Activity() {
         //        [--ez swap false] [--ez motion false] [--ez fxoff true]
         //   --es mode live --es id <name> --es role lead|follow --es own <wav> --es partner <wav> --es ownlong <wav>
         //        [--ei cycle 480] [--ei cycles 30] [--ei half 240] [--ei vol -1] [--es thresh 8]
+        //   --es mode intro --es id <name>   (plays the Kithe intro, saves frame rate / skip / sound facts)
         val i = intent
         when (i.getStringExtra("mode")) {
             "facts" -> withMic { showFacts(i.getStringExtra("id") ?: "facts_${stamp()}") }
@@ -63,7 +64,8 @@ class MainActivity : Activity() {
                     thresh = (i.getStringExtra("thresh") ?: "7").toDouble(),
                 ))
             }
-            null -> showSafety()
+            null -> if (b == null) Intro.show(this, null) { showSafety() } else showSafety()   // from the app icon: Kithe intro first
+            "intro" -> Intro.show(this, i.getStringExtra("id") ?: "intro_${stamp()}") { showSafety() }   // test: writes <id>.json
             else -> showMenu()
         }
     }

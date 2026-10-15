@@ -1,0 +1,4 @@
+three.min.js  - three.js r128, MIT License, Copyright 2010-2021 Three.js Authors (https://github.com/mrdoob/three.js)
+outfit.woff2  - Outfit font, SIL Open Font License 1.1, Copyright The Outfit Project Authors (https://github.com/Outfitio/Outfit-Fonts)
+sounds.js     - The Batsight's own sonar sounds (Warp rise, Hyperspace V), made by tools/intro_sounds.py
+intro.html    - Kithe intro design by Chat (The Batsight), packaged for the app
