@@ -64,6 +64,7 @@ class MainActivity : Activity() {
                     thresh = (i.getStringExtra("thresh") ?: "7").toDouble(),
                 ))
             }
+            "field-replay" -> scrollPage { text(Sonar.replay(this@MainActivity, i.getStringExtra("id") ?: "replay", i.getStringExtra("file") ?: ""), 12f) }   // silent maths check
             null -> if (b == null) Intro.show(this, null) { showSafety() } else showSafety()   // from the app icon: Kithe intro first
             "intro" -> Intro.show(this, i.getStringExtra("id") ?: "intro_${stamp()}") { showSafety() }   // test: writes <id>.json
             else -> showMenu()

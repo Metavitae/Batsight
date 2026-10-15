@@ -91,6 +91,19 @@ object Sonar {
         return r
     }
 
+    /** Silent check (adb mode field-replay): analyse a WAV that CC pushed into files/signals/ as if it
+     *  were a Listen recording. Proves the phone's maths without playing anything. */
+    fun replay(ctx: Context, id: String, file: String): String {
+        val (st, _) = Wav.read(java.io.File(ctx.getExternalFilesDir("signals"), file))
+        val seq = sequence(ctx)
+        val chans = listOf(st.left, st.right).map { a -> DoubleArray(a.size) { a[it].toDouble() } }
+        val res = chans.indices.map { analyse(chans[it], it, seq) }
+        val r = Result(id, "replay", res.firstOrNull()?.candidates?.firstOrNull(), null, res, true, 0, 0, file)
+        val js = toJson(r)
+        Results.save(ctx, "${id}_result.json", "application/json", js.toByteArray())
+        return js
+    }
+
     private fun nearlySame(a: DoubleArray, b: DoubleArray): Boolean {
         var d = 0.0; var e = 0.0
         for (i in a.indices) { d += (a[i] - b[i]) * (a[i] - b[i]); e += a[i] * a[i] }
