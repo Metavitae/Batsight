@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Batsight's Open Eye (approved logo, finished state), centred in the 66 dp safe zone of a 108 dp adaptive icon. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <group android:pivotX="60" android:pivotY="60" android:scaleX="0.6" android:scaleY="0.6"
+        android:translateX="-6" android:translateY="-6">
+        <path android:pathData="M14,60 Q60,4 106,60 Q60,116 14,60 Z" android:fillColor="#8FE8F2" android:fillAlpha="0.14"/>
+        <path android:pathData="M14,60 Q60,4 106,60" android:strokeColor="#8FE8F2" android:strokeWidth="5" android:strokeLineCap="round"/>
+        <path android:pathData="M14,60 Q60,116 106,60" android:strokeColor="#8FE8F2" android:strokeWidth="5" android:strokeLineCap="round"/>
+        <path android:pathData="M40,60 A20,20 0 1,1 80,60 A20,20 0 1,1 40,60 Z" android:fillColor="#4D8DFF" android:fillAlpha="0.25"/>
+        <path android:pathData="M47,60 A13,13 0 1,1 73,60 A13,13 0 1,1 47,60 Z" android:fillColor="#4D8DFF"/>
+    </group>
+</vector>
