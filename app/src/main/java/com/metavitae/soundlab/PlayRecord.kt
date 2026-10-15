@@ -48,6 +48,7 @@ class PlayRecord(private val ctx: Context, private val p: Params, private val st
         val motion: Boolean,      // log gyroscope + accelerometer during the run
         val effectsOff: Boolean,  // switch off noise suppression / echo cancelling / auto gain if the phone allows
         val armed: Boolean = false, // handshake: report "recording", play only on <id>.go, stop only on <id>.stop
+        val stereo: Stereo? = null, // or a sound built in the app (field test screens)
     )
 
     companion object {
@@ -84,6 +85,9 @@ class PlayRecord(private val ctx: Context, private val p: Params, private val st
      *  'cmd media_session volume --set' on both test phones, MEASURED 2026-10-12). */
     var volBefore = -1
 
+    /** What the mic heard in the last run (for screens that analyse on the phone). */
+    var lastSamples: ShortArray? = null; var lastChannels = 1; var lastRate = 48000; var lastPlayed: Stereo? = null
+
     fun restoreVolume() {
         if (volBefore >= 0) (ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager)
             .setStreamVolume(AudioManager.STREAM_MUSIC, volBefore, 0)
@@ -95,6 +99,7 @@ class PlayRecord(private val ctx: Context, private val p: Params, private val st
 
         // ---- the sound to play
         var played: Stereo? = when {
+            p.stereo != null -> p.stereo
             p.file != null -> {
                 val (s, r) = Wav.read(File(ctx.getExternalFilesDir("signals"), p.file))
                 require(r == p.rate) { "signal file is $r Hz but the run is ${p.rate} Hz" }
@@ -262,6 +267,7 @@ class PlayRecord(private val ctx: Context, private val p: Params, private val st
         // ---- save
         status("Saving...")
         val samples = data.toShorts()
+        lastSamples = samples; lastChannels = realCh; lastRate = realRate; lastPlayed = played
         val saved = ArrayList<String>()
         saved.add(Results.save(ctx, "${p.id}.wav", "audio/x-wav", Wav.bytes(samples, realRate, realCh)))
         if (played != null) saved.add(Results.save(ctx, "${p.id}_played.wav", "audio/x-wav", Wav.stereoBytes(played, p.rate)))

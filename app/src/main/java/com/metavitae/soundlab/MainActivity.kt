@@ -84,11 +84,16 @@ class MainActivity : Activity() {
         else { pendingMic = f; requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 1) }
     }
 
+    private fun withMicAndCamera(f: () -> Unit) {
+        val need = arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA).filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+        if (need.isEmpty()) f() else { pendingMic = f; requestPermissions(need.toTypedArray(), 1) }
+    }
+
     override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, res: IntArray) {
         super.onRequestPermissionsResult(code, perms, res)
         val f = pendingMic
         pendingMic = null
-        if (res.isNotEmpty() && res[0] == PackageManager.PERMISSION_GRANTED) f?.invoke() else showMenu()
+        if (res.isNotEmpty() && res.all { it == PackageManager.PERMISSION_GRANTED }) f?.invoke() else showMenu()
     }
 
     // ---------------------------------------------------------------- safety
@@ -114,6 +119,7 @@ class MainActivity : Activity() {
         scrollPage {
             text("Sound Lab", 28f, bold = true)
             text("Results are saved in Download/SoundLab (open Files by Google). Most tests are started by CC from the computer.", 14f, color = Color.LTGRAY)
+            button("FIELD TEST (tonight at work): Focus, Watch, Record kit") { withMicAndCamera { Field.menu(this@MainActivity) { showMenu() } } }
             button("1. Phone sound facts (automatic, about 15 seconds, silent)") { withMic { showFacts("facts_${stamp()}") } }
             button("2. One quiet test chirp (high pitch, 10 ms)") {
                 withMic {
