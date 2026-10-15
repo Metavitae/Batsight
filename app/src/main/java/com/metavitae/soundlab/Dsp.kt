@@ -44,7 +44,7 @@ object Dsp {
             }
             len = len shl 1
         }
-        if (inverse) for (i in 0 until n) { re[i] /= n; im[i] /= n }
+        if (inverse) { val inv = 1.0 / n; for (i in 0 until n) { re[i] = re[i] * inv; im[i] = im[i] * inv } }
     }
 
     fun nfft(n: Int): Int { var k = 1; while (k < n) k = k shl 1; return k }
