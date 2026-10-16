@@ -282,6 +282,10 @@ stopRunning(); running="watch"; marks=[]; changed=false; drawMarks(); mic(true);
 wStatus("Learning the room","var(--muted)","Keep still for a few seconds."); Bat.watchStart();
 });
 
+/* APP: app hidden or phone locked -> stop sounds and let go of the camera; back -> camera again on Focus */
+window.batPause=function(){ stopRunning(); camOff(); };
+window.batResume=function(){ if(tab==="F")camOn(); };
+
 /* ================= start ================= */
 camOn();
 if(!Bat.tourSeen()) openOv("tour");

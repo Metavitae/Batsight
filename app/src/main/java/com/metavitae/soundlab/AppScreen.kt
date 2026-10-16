@@ -22,6 +22,10 @@ object AppScreen {
 
     private fun js(act: Activity, code: String) = act.runOnUiThread { web?.evaluateJavascript(code, null) }
 
+    /** Called from MainActivity.onPause / onResume: nothing keeps pinging or holds the camera in the background. */
+    fun pause() { stopAll(); web?.evaluateJavascript("window.batPause && batPause()", null) }
+    fun resume() { web?.evaluateJavascript("window.batResume && batResume()", null) }
+
     fun stopAll() {
         watch?.let { Thread { it.stop() }.start() }; watch = null
         live?.let { Thread { it.stop() }.start() }; live = null
@@ -30,6 +34,7 @@ object AppScreen {
     @SuppressLint("SetJavaScriptEnabled")
     fun show(act: MainActivity, openLab: () -> Unit) {
         val w = WebView(act)
+        web?.destroy()
         web = w
         w.setBackgroundColor(Color.parseColor("#0B1526"))
         w.settings.javaScriptEnabled = true

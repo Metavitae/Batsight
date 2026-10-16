@@ -18,6 +18,9 @@ class MainActivity : Activity() {
      *  Founder 2026-10-15: after "Phone sound facts" on the 8T he could not get back anywhere. */
     var backHook: (() -> Unit)? = null
 
+    override fun onPause() { super.onPause(); AppScreen.pause() }
+    override fun onResume() { super.onResume(); AppScreen.resume() }
+
     @Deprecated("still the simplest way on SDK 34")
     override fun onBackPressed() {
         if (busy) return                     // a test is running: finish it first
