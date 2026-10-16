@@ -3,7 +3,7 @@
 (function(){
 "use strict";
 var NS="http://www.w3.org/2000/svg", $=function(i){return document.getElementById(i)};
-var Bat=window.Bat||{phone:function(){return "8t"},tourSeen:function(){return false},tourDone:function(){},lab:function(){},buzz:function(){},save:function(){},focusListen:function(){},watchStart:function(){},watchKeep:function(){},stop:function(){},liveStart:function(){}};
+var Bat=window.Bat||{phone:function(){return "8t"},tourSeen:function(){return false},tourDone:function(){},lab:function(){},buzz:function(){},save:function(){},focusListen:function(){},watchStart:function(){},watchKeep:function(){},stop:function(){},liveStart:function(){},hiveJoin:function(){},hiveHandshake:function(){},hiveSend:function(){}};
 var PH=Bat.phone();
 function nearTxt(){return PH==="8t"?"<b>30 cm</b>":"<b>50 cm</b>";}
 var running=null;   // "listen" | "walk" | "watch" | null
@@ -246,7 +246,7 @@ wel("path",{d:"M"+(WOX-m*WS)+" "+WOY+" A"+m*WS+" "+m*WS+" 0 0 1 "+(WOX+m*WS)+" "
 var t=wel("text",{x:WOX+m*WS-4,y:WOY-4,fill:"#7F93B8","font-size":9,"text-anchor":"end"});t.textContent=m+" m";
 });
 var pingG=wel("g",{fill:"none",stroke:"#8FE8F2"}), markG=wel("g",{});
-wel("circle",{cx:WOX,cy:WOY,r:6,fill:"#4D8DFF"});
+var soloDot=wel("circle",{cx:WOX,cy:WOY,r:6,fill:"#4D8DFF"});
 function wp(a,r){var th=a*Math.PI/180;return [(WOX+Math.sin(th)*r*WS).toFixed(1),(WOY-Math.cos(th)*r*WS).toFixed(1)];}
 function band(a0,a1,r0,r1,fill,op,stroke,dash){
 var p0=wp(a0,r0),p1=wp(a0,r1),p2=wp(a1,r1),p3=wp(a1,r0);
@@ -267,6 +267,8 @@ function wStatus(big,col,sub){$("w-big").textContent=big;$("w-big").style.color=
 setInterval(function(){ if(running==="watch"&&!changed&&!marks.length&&$("w-big").textContent==="Still"){wStatus("Still","var(--ok)","Nothing has moved for "+Math.round((Date.now()-since)/1000)+" s.");} },1000);
 window.batWatch=function(ev){
 if(running!=="watch")return;
+if(ev.state==="turn"){ $("w-sub").textContent=ev.text||"Taking turns with the other phone."; return; }
+if(inHive()&&meTag){ hw[meTag]={state:ev.state,d:ev.d,at:Date.now()}; if(ev.state==="MOVING"||ev.state==="CHANGED"){ hiveDraw(); return; } }
 if(ev.state==="learning"){wStatus("Learning the room","var(--muted)","Keep still for a few seconds.");return;}
 if(ev.state==="MOVING"&&ev.d!=null){changed=false;$("w-ask2").hidden=true;marks.push({d:ev.d});if(marks.length>5)marks.shift();drawMarks();
 wStatus("Something moved","var(--warn)","About "+ev.d.toFixed(1)+" m away. This phone can't tell which way yet.");since=Date.now();return;}
@@ -277,16 +279,41 @@ if(ev.state==="still"&&!changed){ if(marks.length){marks.shift();drawMarks();} i
 };
 $("w-yes").addEventListener("click",function(){Bat.watchKeep();changed=false;marks=[];drawMarks();$("w-ask2").hidden=true;since=Date.now();wStatus("Still","var(--ok)","Kept as the new normal. Watching again.");});
 $("w-no").addEventListener("click",function(){$("w-ask2").hidden=true;$("w-sub").textContent+=" Still warning, as you asked.";});
-$("hgo").addEventListener("click",function(){
-if(running==="watch"){stopRunning();marks=[];changed=false;drawMarks();$("w-ask2").hidden=true;wStatus("Not watching","var(--muted)","Stopped. Tap Start to watch again.");return;}
-stopRunning(); running="watch"; marks=[]; changed=false; drawMarks(); mic(true); $("hgo").textContent="Stop"; since=Date.now();
+function inHive(){ return !!(meTag&&otherTag); }
+function startWatch(tell){
+stopRunning(); running="watch"; marks=[]; changed=false; drawMarks(); mic(true); $("hgo").textContent="Stop"; since=Date.now(); hw={};
 wStatus("Learning the room","var(--muted)","Keep still for a few seconds."); Bat.watchStart();
-});
+if(inHive()){ if(tell)Bat.hiveSend(JSON.stringify({t:"watch",on:true})); $("miclabel").textContent="Mic on: "+[meTag,otherTag].sort().join(", "); hiveBase(); }
+}
+function stopWatch(tell){
+stopRunning();marks=[];changed=false;drawMarks();$("w-ask2").hidden=true;wStatus("Not watching","var(--muted)","Stopped. Tap Start to watch again.");
+if(inHive()&&tell)Bat.hiveSend(JSON.stringify({t:"watch",on:false})); hiveG.innerHTML="";
+}
+$("hgo").addEventListener("click",function(){ if(running==="watch")stopWatch(true); else startWatch(true); });
 
-/* APP: app hidden or phone locked -> stop sounds and let go of the camera; back -> camera again on Focus */
-window.batPause=function(){ stopRunning(); camOff(); };
-window.batResume=function(){ if(tab==="F")camOn(); };
-
+/* ---- APP: hive merged map (Chat: Shared scanning screens, Watch). Phones on the bottom line, the handshake
+   distance apart; a mover heard by both sits where their distance circles cross, on the room side. ---- */
+var hiveG=wel("g",{}), hw={}, trail=[];
+function pX(tag){ var d=hiveD||0.6, left=(tag===[meTag,otherTag].sort()[0]); return WOX+(left?-1:1)*d/2*WS; }
+function hiveBase(){ hiveG.innerHTML=""; soloDot.setAttribute("opacity",inHive()?0:1); [meTag,otherTag].forEach(function(t){ tagSvg(t,pX(t),WOY+12,hiveG,8); }); }
+function remoteW(ev){ hw[ev.tag]={state:ev.state,d:ev.d,at:Date.now()}; hiveDraw(); }
+function hiveDraw(){
+if(!inHive()||running!=="watch")return;
+hiveBase();
+var now=Date.now(), mv=[meTag,otherTag].map(function(t){var e=hw[t];return (e&&(e.state==="MOVING"||e.state==="CHANGED")&&e.d!=null&&now-e.at<1500)?{t:t,d:e.d}:null;}).filter(Boolean);
+var g=hiveG, ring=function(t,r,dash){ jel("circle",{cx:pX(t),cy:WOY+12,r:r*WS,fill:"none",stroke:COL[t],"stroke-opacity":0.7,"stroke-width":1.4,"stroke-dasharray":dash?"4 4":""},g); };
+if(mv.length===2){
+ var A=mv[0],B=mv[1], xa=(pX(A.t)-WOX)/WS, xb=(pX(B.t)-WOX)/WS;
+ var x=(A.d*A.d-B.d*B.d+xb*xb-xa*xa)/(2*(xb-xa)), yy=A.d*A.d-(x-xa)*(x-xa), approx=yy<0, y=Math.sqrt(Math.max(0,yy));
+ ring(A.t,A.d,false); ring(B.t,B.d,false);
+ trail.push([WOX+x*WS,WOY+12-y*WS]); if(trail.length>5)trail.shift();
+ trail.forEach(function(p,i){ jel("circle",{cx:p[0],cy:p[1],r:i===trail.length-1?7:3.5,fill:"#F2B84B","fill-opacity":(0.25+0.75*(i+1)/trail.length).toFixed(2)},g); });
+ wStatus("Something moved","var(--warn)","About "+A.d.toFixed(1)+" m from "+A.t+" and "+B.d.toFixed(1)+" m from "+B.t+"."+(approx?" The two distances don't quite meet, so the spot is approximate.":""));
+} else if(mv.length===1){
+ ring(mv[0].t,mv[0].d,true);
+ wStatus("Something moved","var(--warn)","Heard by "+mv[0].t+" only: about "+mv[0].d.toFixed(1)+" m from it. Which way is unknown.");
+}
+}
 /* ================= Join (Chat: Shared scanning screens) ================= */
 var COL={A:"#8FE8F2",B:"#FF9EC7",C:"#C7B8FF"}, SH={A:"circle",B:"square",C:"triangle"}, NAMEC={A:"cyan",B:"pink",C:"violet"};
 function jel(t,a,p){var e=document.createElementNS(NS,t);for(var k in a)e.setAttribute(k,a[k]);p.appendChild(e);return e}
@@ -294,7 +321,7 @@ function tagSvg(id,x,y,p,r){r=r||8;var c=COL[id]||"#9AAED0";
 if(SH[id]==="circle")jel("circle",{cx:x,cy:y,r:r,fill:c},p);else if(SH[id]==="square")jel("rect",{x:x-r,y:y-r,width:2*r,height:2*r,rx:2,fill:c},p);
 else jel("path",{d:"M"+x+" "+(y-r-1)+" L"+(x+r+1)+" "+(y+r)+" L"+(x-r-1)+" "+(y+r)+" Z",fill:c},p);
 var t=jel("text",{x:x,y:y+4,"text-anchor":"middle","font-size":11,"font-weight":600,fill:"#06101F"},p);t.textContent=id;}
-var meTag=null, otherTag=null;
+var meTag=null, otherTag=null, hiveD=null;
 function jdraw(found){var g=$("jsvg");g.innerHTML="";
 jel("line",{x1:70,y1:80,x2:230,y2:80,stroke:"#2A3F66","stroke-dasharray":"3 5"},g);
 [[52,meTag||"A"],[248,otherTag||(meTag==="A"?"B":"A")]].forEach(function(q){var x=q[0],id=q[1];
@@ -310,10 +337,14 @@ window.batHive=function(ev){
 if(ev.type==="peers"){ meTag=ev.me; if(ev.peers>0){otherTag=(ev.tags||"").split(",")[0]||null;} showMyTag(); jdraw(false);
  if($("j-next").hidden&&!running) jready(ev.peers);
  if(ev.dropped){ $("j-sub").textContent="The other phone dropped out."; } return; }
+if(ev.type==="msg"){
+ if(ev.t==="watch"){ if(ev.on&&running!=="watch"){ if(tab!=="H")setTab("H"); startWatch(false);} else if(!ev.on&&running==="watch"){ stopWatch(false);} return; }
+ if(ev.t==="w"&&ev.tag){ remoteW(ev); return; }
+ return; }
 if(ev.type==="error"){ jset("Can't reach the other phone","The nearby link didn't start ("+(ev.why||ev.where)+"). Check Bluetooth is on, then tap Join again.","Not connected",""); return; }
 if(ev.type==="hsgo"){ running="hs"; mic(true); $("j-go").hidden=true; jdraw(true); jset("2. Listen to each other","Keep still for a few seconds. You will hear short chirps, like birds.","Chirping…","About 3 seconds."); return; }
 if(ev.type==="hserr"){ running=null; mic(false); $("j-go").hidden=false; jdraw(false); jset("1. Face the phones","They didn't hear each other. Hold them facing each other, 20 to 60 cm apart, and try again.","Try again","Both phones must be on this screen."); return; }
-if(ev.type==="hs"){ running=null; mic(false); meTag=ev.me; otherTag=ev.other; showMyTag(); jdraw(false);
+if(ev.type==="hs"){ running=null; mic(false); meTag=ev.me; otherTag=ev.other; hiveD=ev.d; showMyTag(); jdraw(false);
  jset("3. Is this your other phone?","Check that the other phone shows the same name tag: the "+(NAMEC[ev.other]||"")+" "+(SH[ev.other]||"")+" "+ev.other+".","Found: "+(NAMEC[ev.other]||"")+" "+(SH[ev.other]||"")+" "+ev.other,ev.d.toFixed(2)+" m away, facing you.");
  $("j-next").hidden=false;$("j-no").hidden=false; return; }
 };

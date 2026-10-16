@@ -27,7 +27,7 @@ import kotlin.math.sqrt
  * spacing is taken as 15 cm and which side is "left" is unknown until CC checks tonight's files).
  * Saves the whole recording (app files/field/<id>.wav) and one line per ping (<id>.csv) for CC.
  */
-class WatchEngine(private val ctx: Context, private val id: String, private val onEvent: (Event) -> Unit) {
+class WatchEngine(private val ctx: Context, private val id: String, private val yieldTurn: Boolean = false, private val onEvent: (Event) -> Unit) {
     class Event(val t: Double, val state: String, val whereM: Double?, val angleDeg: Double?, val text: String)
 
     private val rate = Sonar.RATE
@@ -46,6 +46,10 @@ class WatchEngine(private val ctx: Context, private val id: String, private val 
     private var strongParity = -1
     private val firstLevels = DoubleArray(2)
     private var curSpk = 0; private var curLv = DoubleArray(2)
+    // Hive turn-taking (stage 2): phone B listens before learning; if phone A's pings land inside B's own busy part
+    // (ping + echoes, first ~125 ms), B pauses once so A's pings fall in its silent gap (~165 ms after its own).
+    @Volatile private var insertFrames = 0
+    private var shiftedMs = 0.0; private var foreignMs: Double? = null
 
     // rolling buffer of the last few seconds (interleaved), with the absolute frame number of its start
     private val keepFrames = rate * 4
@@ -110,7 +114,11 @@ class WatchEngine(private val ctx: Context, private val id: String, private val 
         }
         threads += Thread {
             track.play()
-            while (running) track.write(one, 0, one.size)
+            while (running) {
+                val ins = insertFrames
+                if (ins > 0) { insertFrames = 0; track.write(ShortArray(ins * 2), 0, ins * 2) }   // one pause = shift our rhythm
+                track.write(one, 0, one.size)
+            }
             track.stop(); track.release()
         }
         threads += Thread { process() }
@@ -125,7 +133,8 @@ class WatchEngine(private val ctx: Context, private val id: String, private val 
         File(dir, "$id.csv").writeText(csv.toString())
         Results.save(ctx, "$id.csv", "text/csv", csv.toString().toByteArray())
         Results.save(ctx, "${id}_info.json", "application/json", Json().put("id", id).put("phone", Sonar.phoneName).put("channels", ch)
-            .put("every_ms", 300).put("speakers", "alternate L,R; watch uses the one mic 0 hears loudest").put("spacing_m_assumed", spacingM).put("wav", wavFile.absolutePath).toString().toByteArray())
+            .put("every_ms", 300).put("speakers", "alternate L,R; watch uses the one mic 0 hears loudest")
+            .put("yield_turn", yieldTurn).put("shifted_ms", shiftedMs).put("foreign_ms_after_shift", foreignMs).put("spacing_m_assumed", spacingM).put("wav", wavFile.absolutePath).toString().toByteArray())
     }
 
     private fun window(startAbs: Long, frames: Int): Array<DoubleArray>? = synchronized(lock) {
@@ -142,10 +151,27 @@ class WatchEngine(private val ctx: Context, private val id: String, private val 
         // 1. find the first ping's direct sound in the first 1.5 s
         while (running && available() < rate * 3 / 2) Thread.sleep(50)
         if (!running) return
-        val firstAt = available() - rate * 3 / 2
-        val first = window(firstAt, rate * 3 / 2) ?: return
-        val (r0, i0) = Dsp.matched(first[0], warp)
-        val a0 = Dsp.firstArrival(Dsp.env(r0, i0), 0, cycle * 3) ?: return
+        var firstAt = available() - rate * 3 / 2
+        var first = window(firstAt, rate * 3 / 2) ?: return
+        var (r0, i0) = Dsp.matched(first[0], warp)
+        var e0 = Dsp.env(r0, i0)
+        var a0 = Dsp.firstArrival(e0, 0, cycle * 3) ?: return
+        if (yieldTurn) {
+            val f = foreignPhase(e0, a0)
+            foreignMs = f
+            if (f != null && f < 125.0) {
+                val sMs = ((f - 165.0) % 300.0 + 300.0) % 300.0
+                insertFrames = (sMs / 1000 * rate).toInt(); shiftedMs = sMs
+                Thread.sleep(1600)                                   // let the pause pass through the speaker, then lock on again
+                while (running && available() < firstAt + rate * 3) Thread.sleep(50)
+                firstAt = available() - rate * 3 / 2
+                first = window(firstAt, rate * 3 / 2) ?: return
+                val m = Dsp.matched(first[0], warp); r0 = m.first; i0 = m.second; e0 = Dsp.env(r0, i0)
+                a0 = Dsp.firstArrival(e0, 0, cycle * 3) ?: return
+                foreignMs = foreignPhase(e0, a0)
+            }
+            onEvent(Event(0.0, "turn", null, null, "Taking turns with the other phone" + (if (shiftedMs > 0) " (moved my rhythm ${shiftedMs.toInt()} ms)" else "")))
+        }
         var next = firstAt + a0
         val pre = 300; val span = warp.size + nBins + 2 * pre
         val profsR = ArrayList<Array<DoubleArray>>(); val profsI = ArrayList<Array<DoubleArray>>(); val arrivals = ArrayList<DoubleArray>()
@@ -285,6 +311,22 @@ class WatchEngine(private val ctx: Context, private val id: String, private val 
     }
 
     private val learnBuf = ArrayList<Pair<DoubleArray, DoubleArray>>()
+
+    /** Where another phone's ping sits in my 300 ms rhythm (ms after my own ping), or null if none heard.
+     *  Own pings (both speakers) are at a0 + k * cycle; anything else at more than 8% of my own direct is foreign. */
+    private fun foreignPhase(e: DoubleArray, a0: Int): Double? {
+        var own = 0.0; var k = a0; while (k < e.size) { own = max(own, e[k]); k += cycle }
+        val near = rate * 8 / 1000; val before = rate * 2 / 1000
+        var best = -1; var bestV = 0.08 * own
+        for (i in 1 until e.size - 1) {
+            if (e[i] <= bestV || e[i] < e[i - 1] || e[i] < e[i + 1]) continue
+            val ph = ((i - a0) % cycle + cycle) % cycle
+            if (ph <= near || ph >= cycle - before) continue          // my own ping and its ringing
+            best = i; bestV = e[i]
+        }
+        if (best < 0) return null
+        return (((best - a0) % cycle + cycle) % cycle) * 1000.0 / rate
+    }
 
     private fun log(t: Double, state: String, where: Double?, n: Int, angle: Double?, delay: Double?, spk: Int, lv: DoubleArray) {
         csv.append(String.format(java.util.Locale.US, "%.2f,%s,%s,%d,%s,%s,%d,%s,%.1f,%.1f\n", t, state, where?.let { f2(it) } ?: "", n,

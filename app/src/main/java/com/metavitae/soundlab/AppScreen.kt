@@ -112,6 +112,7 @@ object AppScreen {
                                 "msg" -> when (j.optString("t")) {
                                     "hs" -> { hsPeerTag = j.optString("from"); val me = hive?.myTag() ?: "B"; Thread { Thread.sleep(j.optLong("in", 600)); handshake(act, me) }.start()
                                               js(act, "window.batHive && batHive({type:'hsgo'})") }
+                                    "w", "watch" -> js(act, "window.batHive && batHive(" + j.put("type", "msg").toString() + ")")
                                     "hsres" -> { if (j.optBoolean("ok")) { hsPeer = j.optDouble("diff"); hsPeerTag = j.optString("from"); hsFinish(act) } else js(act, "window.batHive && batHive({type:'hserr'})") }
                                 }
                             }
@@ -151,11 +152,19 @@ object AppScreen {
             // ---- Screen 4: Watch
             @JavascriptInterface fun watchStart() {
                 stopAll()
-                val e = WatchEngine(act, "app_watch_${Sonar.phoneName}_${Field.day()}") { ev ->
-                    js(act, "window.batWatch && batWatch(" + Json().put("state", ev.state).put("d", ev.whereM).put("t", ev.t).toString() + ")")
+                val h = hive
+                val inHive = h != null && h.peerCount() > 0
+                val me = h?.myTag() ?: "A"
+                val e = WatchEngine(act, "app_watch_${Sonar.phoneName}_${Field.day()}", yieldTurn = inHive && me != "A") { ev ->
+                    val j = Json().put("state", ev.state).put("d", ev.whereM).put("t", ev.t).put("text", ev.text).toString()
+                    js(act, "window.batWatch && batWatch($j)")
+                    // hive: share every non-quiet reading, and 'still' about once a second (the other phone draws the merged map)
+                    if (inHive && (ev.state != "still" || (ev.t * 10).toInt() % 10 < 6)) h?.send(org.json.JSONObject(j).put("t", "w").put("tag", me))
                 }
                 watch = e; e.start()
             }
+            /** Hive: tell the other phone(s) something (start/stop Watch together, etc.). */
+            @JavascriptInterface fun hiveSend(json: String) { try { hive?.send(org.json.JSONObject(json)) } catch (_: Throwable) {} }
             @JavascriptInterface fun watchKeep() { watch?.adopt() }
             @JavascriptInterface fun stop() { stopAll() }
 
