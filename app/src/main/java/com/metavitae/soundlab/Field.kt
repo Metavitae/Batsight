@@ -77,10 +77,46 @@ object Field {
             .raw("outputs", Json.list(devs(AudioManager.GET_DEVICES_OUTPUTS))).toString().toByteArray())
     }
 
+    // ------------------------------------------------------------------ hints (founder 2026-10-15: "an intuitive way to use the app")
+
+    private val HINTS = mapOf(
+        "focus" to Pair("Focus in the dark", listOf(
+            "Hold the phone upright and point the camera at ONE thing, " + (if (Sonar.is8T) "30 cm" else "50 cm") + " to 3 m away.",
+            "Tap Listen and hold still for 2 seconds. You'll hear quiet chirps.",
+            "Green frame + a number: it found something. Grey \"?\": it can't tell (glass often does this). Two numbers: tap the one you meant.",
+            "Then tell it if it picked the right thing. If you have a tape, type the real distance.")),
+        "watch" to Pair("Watch", listOf(
+            "Lay the phone flat and still on a table or shelf, facing the room." + if (Sonar.is8T) " Long side toward the room." else "",
+            "Tap Start and stay still for 10 seconds while it learns the room.",
+            "Then move around. Amber marks show where something moved. A solid mark means something changed and stayed: tap \"Keep as normal\" to accept it.",
+            "Tap Stop when you're done (it stops by itself after 30 minutes).")),
+        "kit" to Pair("Record kit", listOf(
+            "Point the phone at something and tap what it is (glass, wall, person...).",
+            "If you know them, type the distance and the angle (left is minus).",
+            "Tap Record and hold still for 2 seconds.",
+            "\"Left only\" and \"Right only\" play from one speaker: that's a test for telling direction.")),
+    )
+
+    /** Shows the screen's hint card the first time (or always when force = true, from the ? button). */
+    fun hint(act: Activity, key: String, force: Boolean = false) {
+        val prefs = act.getSharedPreferences("hints", Context.MODE_PRIVATE)
+        if (!force && prefs.getBoolean(key, false)) return
+        val (title, lines) = HINTS[key] ?: return
+        val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setPadding(act.dp(22), act.dp(18), act.dp(22), act.dp(6)); setBackgroundColor(Ui.BG) }
+        col.addView(act.tv(title, 22f, bold = true))
+        lines.forEachIndexed { i, l -> col.addView(act.tv("${i + 1}.  $l", 16f).apply { setPadding(act.dp(4), act.dp(8), act.dp(4), act.dp(4)) }) }
+        val d = android.app.AlertDialog.Builder(act).setView(col).setCancelable(true).create()
+        col.addView(act.btn("Got it") { d.dismiss() }.apply { layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = act.dp(14); bottomMargin = act.dp(12) } })
+        d.setOnDismissListener { prefs.edit().putBoolean(key, true).apply() }
+        d.show()
+        d.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Ui.BG))
+    }
+
     // ------------------------------------------------------------------ menu
 
     fun menu(act: Activity, back: () -> Unit) {
-        Thread { try { saveFacts(act) } catch (_: Throwable) {} }.start()
+        val pf = act.getSharedPreferences("hints", Context.MODE_PRIVATE)
+        if (!pf.getBoolean("facts_saved", false)) { pf.edit().putBoolean("facts_saved", true).apply(); Thread { try { saveFacts(act) } catch (_: Throwable) {} }.start() }
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setPadding(act.dp(20), act.dp(28), act.dp(20), act.dp(28)) }
         col.addView(act.tv("Batsight field test", 26f, bold = true))
         col.addView(act.tv("Tonight's test at work. Every try is saved on the phone; CC measures them tomorrow. Sounds are quiet (-20 dB) and short.", 14f, Ui.MUTED))
@@ -276,17 +312,22 @@ object Field {
             status.text = "Aim at one thing and tap Listen."; status.setTextColor(Ui.INK); line.text = ""
             row1.removeAllViews(); row2.removeAllViews(); cam.autoFocus()
             row1.addView(act.btn("Listen") { listen() }, LinearLayout.LayoutParams(0, -2, 2f))
+            row1.addView(act.btn("?") { hint(act, "focus", true) }, LinearLayout.LayoutParams(act.dp(56), -2))
             row1.addView(act.btn("‹ Menu") { cam.close(); back() }, LinearLayout.LayoutParams(0, -2, 1f))
         }
         showIdle()
         act.setContentView(root)
+        hint(act, "focus")
     }
 
     // ------------------------------------------------------------------ Record kit
 
     fun kit(act: Activity, back: () -> Unit) {
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setPadding(act.dp(18), act.dp(24), act.dp(18), act.dp(24)) }
-        col.addView(act.tv("Record kit", 24f, bold = true))
+        val head = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        head.addView(act.tv("Record kit", 24f, bold = true), LinearLayout.LayoutParams(0, -2, 1f))
+        head.addView(act.btn("?") { hint(act, "kit", true) }, LinearLayout.LayoutParams(act.dp(56), -2))
+        col.addView(head)
         col.addView(act.tv("Point the phone, pick what it faces, tap Record. Fill the numbers only if you know them.", 13f, Ui.MUTED))
         var tag = "object"; var speaker = "both"
         val tagRow = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
@@ -335,6 +376,7 @@ object Field {
         col.addView(mic); col.addView(out)
         col.addView(act.btn("‹ Menu", back).apply { layoutParams = LinearLayout.LayoutParams(-2, -2).apply { topMargin = act.dp(20) } })
         act.setContentView(ScrollView(act).apply { setBackgroundColor(Ui.BG); addView(col) })
+        hint(act, "kit")
     }
 
     // ------------------------------------------------------------------ Screen 4: Watch
@@ -344,6 +386,7 @@ object Field {
         val top = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         top.addView(act.tv("Watch", 24f, bold = true), LinearLayout.LayoutParams(0, -2, 1f))
         val mic = act.tv("", 15f, Ui.MIC, bold = true); top.addView(mic)
+        top.addView(act.btn("?") { hint(act, "watch", true) }, LinearLayout.LayoutParams(act.dp(56), -2))
         root.addView(top)
         val map = MapView(act)
         root.addView(map, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -370,6 +413,7 @@ object Field {
         row.addView(start, LinearLayout.LayoutParams(0, -2, 1f)); row.addView(keep, LinearLayout.LayoutParams(0, -2, 1f))
         row.addView(act.btn("‹ Menu") { eng?.stop(); eng = null; back() }, LinearLayout.LayoutParams(0, -2, 1f))
         act.setContentView(root)
+        hint(act, "watch")
     }
 
     /** Top-down map from Chat's Watch drawing: phone at the bottom, rings at 1/2/3 m, amber marks. */
