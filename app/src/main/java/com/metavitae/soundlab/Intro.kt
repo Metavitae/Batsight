@@ -21,6 +21,7 @@ object Intro {
         val calm = Settings.Global.getFloat(act.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
         val am = act.getSystemService(AudioManager::class.java)
         val mute = am.ringerMode != AudioManager.RINGER_MODE_NORMAL
+        val vib = am.ringerMode == AudioManager.RINGER_MODE_VIBRATE   // like LightComm: one short buzz when the name appears
         val web = WebView(act)
         web.setBackgroundColor(Color.parseColor("#0B1526"))
         web.settings.javaScriptEnabled = true
@@ -30,6 +31,9 @@ object Intro {
             @JavascriptInterface fun stats(json: String) {
                 Log.i("BatsightIntro", json)
                 if (statsId != null) Results.save(act, "$statsId.json", "application/json", json.toByteArray())
+            }
+            @JavascriptInterface fun buzz(ms: Int) {
+                try { act.getSystemService(android.os.Vibrator::class.java)?.vibrate(android.os.VibrationEffect.createOneShot(ms.toLong().coerceIn(10, 300), 180)) } catch (_: Exception) {}
             }
             @JavascriptInterface fun done() {
                 act.runOnUiThread {
@@ -42,6 +46,6 @@ object Intro {
         }, "Intro")
         act.window.decorView.setBackgroundColor(Color.parseColor("#0B1526"))
         act.setContentView(web)
-        web.loadUrl("file:///android_asset/intro/intro.html?calm=${if (calm) 1 else 0}&mute=${if (mute) 1 else 0}")
+        web.loadUrl("file:///android_asset/intro/intro.html?calm=${if (calm) 1 else 0}&mute=${if (mute) 1 else 0}&vib=${if (vib) 1 else 0}")
     }
 }
