@@ -40,7 +40,8 @@ class LiveEngine(private val ctx: Context, val id: String, private val onPing: (
     @Volatile private var heading = 0.0
     private val threads = ArrayList<Thread>()
     private val dir = ctx.getExternalFilesDir("field")!!.also { it.mkdirs() }
-    private val log = StringBuilder("t_s,heading_deg,near_m,far,heard\n")
+    private val log = StringBuilder("t_s,heading_deg,near_m,far,heard,speaker,lvl_db\n")
+    private var strongParity = -1; private val firstLevels = DoubleArray(2)
     private var ch = 1
     private val keepFrames = rate * 4
     private var buf = ShortArray(0); private var bufStart = 0L; private var bufLen = 0
@@ -72,8 +73,8 @@ class LiveEngine(private val ctx: Context, val id: String, private val onPing: (
             NoiseSuppressor.isAvailable() to { NoiseSuppressor.create(rec.audioSessionId) as android.media.audiofx.AudioEffect? },
             AcousticEchoCanceler.isAvailable() to { AcousticEchoCanceler.create(rec.audioSessionId) },
             AutomaticGainControl.isAvailable() to { AutomaticGainControl.create(rec.audioSessionId) })) if (ok) try { make()?.enabled = false } catch (_: Throwable) {}
-        val one = ShortArray(cycle * 2)
-        for (k in warp.indices) { val v = (warp[k] * 32767).toInt().toShort(); one[2 * k] = v; one[2 * k + 1] = v }
+        val one = ShortArray(cycle * 2 * 2)            // speakers take turns: left, then right (founder: "or alternate")
+        for (k in warp.indices) { val v = (warp[k] * 32767).toInt().toShort(); one[2 * k] = v; one[2 * (cycle + k) + 1] = v }
         val track = AudioTrack.Builder()
             .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
             .setAudioFormat(AudioFormat.Builder().setSampleRate(rate).setChannelMask(AudioFormat.CHANNEL_OUT_STEREO).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
@@ -142,9 +143,17 @@ class LiveEngine(private val ctx: Context, val id: String, private val onPing: (
             var k = pre - 48
             for (q in pre - 48..pre + 48) if (e[q] > e[k]) k = q
             val base = next - pre
-            next = base + k + cycle                           // follow the clocks' slow drift
+            val parity = i % 2
+            val strong = strongParity < 0 || parity == strongParity
+            next = if (strong) base + k + cycle else next + cycle   // follow the clocks' slow drift on the loud speaker only
             val prof = DoubleArray(nBins) { hypot(mr[k + it], mi[k + it]) }
             val direct = prof[0]
+            val lvDb = 20 * kotlin.math.log10(direct + 1e-20)
+            if (strongParity < 0) { firstLevels[parity] = lvDb; if (i == 1) strongParity = if (firstLevels[0] >= firstLevels[1]) 0 else 1; i++; continue }
+            if (!strong) {
+                synchronized(log) { log.append(String.format(java.util.Locale.US, "%.2f,%.1f,,,,%s,%.1f\n", i * 0.2, heading, if (parity == 0) "L" else "R", lvDb)) }
+                i++; continue
+            }
             val sorted = prof.copyOfRange(minBin, nBins).sorted()
             val noise = sorted[sorted.size / 2] + 1e-12
             val heard = direct > 1e-4
@@ -159,7 +168,7 @@ class LiveEngine(private val ctx: Context, val id: String, private val onPing: (
             recent.addLast(near); while (recent.size > 3) recent.removeFirst()
             val agreed = near?.let { d -> if (recent.count { it != null && kotlin.math.abs(it - d) < 0.10 } >= 2) d else null }
             val t = i * 0.2; i++
-            synchronized(log) { log.append(String.format(java.util.Locale.US, "%.2f,%.1f,%s,%d,%d\n", t, heading, agreed?.let { f2(it) } ?: "", if (far) 1 else 0, if (heard) 1 else 0)) }
+            synchronized(log) { log.append(String.format(java.util.Locale.US, "%.2f,%.1f,%s,%d,%d,%s,%.1f\n", t, heading, agreed?.let { f2(it) } ?: "", if (far) 1 else 0, if (heard) 1 else 0, if (parity == 0) "L" else "R", lvDb)) }
             onPing(Ping(t, heading, agreed, far, heard))
         }
     }
