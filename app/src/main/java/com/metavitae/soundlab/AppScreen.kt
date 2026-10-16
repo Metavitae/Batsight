@@ -34,7 +34,7 @@ object AppScreen {
         val am = act.getSystemService(android.media.AudioManager::class.java)
         val vol = (am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC) * 0.6).toInt()
         val id = "app_handshake_${Sonar.phoneName}_${tag}_${Field.day()}"
-        val job = PlayRecord(act, PlayRecord.Params(id, null, null, "unprocessed", 1, Sonar.RATE, -1, "speaker", vol, 200, 600, 0, 0, false, false, true, stereo = Stereo(l, l.copyOf())))
+        val job = PlayRecord(act, PlayRecord.Params(id, null, null, "unprocessed", 1, Sonar.RATE, -1, "speaker", vol, 200, 600, 0, 0, false, false, true, stereo = Stereo(l, l.copyOf()))) {}
         try { job.run() } catch (t: Throwable) { job.restoreVolume(); js(act, "window.batHive && batHive({type:'hserr'})"); return }
         val x = job.lastSamples ?: return
         val ch = job.lastChannels
