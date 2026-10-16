@@ -76,6 +76,14 @@ class MainActivity : Activity() {
                 ))
             }
             "field-replay" -> scrollPage { text(Sonar.replay(this@MainActivity, i.getStringExtra("id") ?: "replay", i.getStringExtra("file") ?: ""), 12f) }   // silent maths check
+            "scan" -> withMic {   // CC runs the turn/walk test from the computer: --es id X --ei secs 30 [--ez dry true]
+                val e = ScanEngine(this, i.getStringExtra("id") ?: "scan_${stamp()}", i.getBooleanExtra("dry", false), i.getIntExtra("secs", 30))
+                busy = true
+                scrollPage { text("Scan running (CC)", 24f, bold = true); text("● Mic on", 16f, bold = true, color = Color.RED); text("Turn or walk as CC says. Tap MARK at the thing / at each tape mark.", 15f)
+                    button("MARK") { e.mark("ahead") } }
+                e.start()
+                Thread { while (e.running) Thread.sleep(200); e.stop(); busy = false; runOnUiThread { scrollPage { text("Scan saved.", 20f); button("‹ Back to menu") { showMenu() } } } }.start()
+            }
             null -> if (b == null) Intro.show(this, null) { showSafety() } else showSafety()   // from the app icon: Kithe intro first
             "intro" -> Intro.show(this, i.getStringExtra("id") ?: "intro_${stamp()}") { showSafety() }   // test: writes <id>.json
             else -> showMenu()

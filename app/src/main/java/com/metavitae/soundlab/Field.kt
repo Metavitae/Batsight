@@ -90,6 +90,11 @@ object Field {
             "Tap Start and stay still for 10 seconds while it learns the room.",
             "Then move around. Amber marks show where something moved. A solid mark means something changed and stayed: tap \"Keep as normal\" to accept it.",
             "Tap Stop when you're done (it stops by itself after 30 minutes).")),
+        "scan" to Pair("Scan: turn and walk", listOf(
+            "TURN: stand still and hold the phone upright, screen facing you. Tap Start, then turn slowly (about one full turn in 30 seconds).",
+            "Each time the phone points straight at the thing you're testing, tap the big MARK button.",
+            "WALK: pick Walk, tap Start and walk slowly along your path. Tap MARK at each tape mark you pass.",
+            "Tap Stop when you're done. Everything is saved for CC.")),
         "kit" to Pair("Record kit", listOf(
             "Point the phone at something and tap what it is (glass, wall, person...).",
             "If you know them, type the distance and the angle (left is minus).",
@@ -129,6 +134,7 @@ object Field {
         }
         item("Focus in the dark (Screen 2)", "Aim at one thing, tap Listen. Then tell it if it picked the right thing.") { focus(act) { menu(act, back) } }
         item("Watch (Screen 4)", "Lay the phone still. It shows where something moved.") { watch(act) { menu(act, back) } }
+        item("Scan: turn and walk (direction + blueprint test)", "Turn slowly or walk while it listens. Tap MARK at the thing / at each tape mark.") { scan(act) { menu(act, back) } }
         item("Record kit", "Tagged tries: glass, mirror, wall, open space, person; one speaker at a time.") { kit(act) { menu(act, back) } }
         col.addView(act.btn("‹ Back", back).apply { layoutParams = LinearLayout.LayoutParams(-2, -2).apply { topMargin = act.dp(28) } })
         act.setContentView(ScrollView(act).apply { setBackgroundColor(Ui.BG); addView(col) })
@@ -382,6 +388,68 @@ object Field {
         col.addView(act.btn("‹ Menu", back).apply { layoutParams = LinearLayout.LayoutParams(-2, -2).apply { topMargin = act.dp(20) } })
         act.setContentView(ScrollView(act).apply { setBackgroundColor(Ui.BG); addView(col) })
         hint(act, "kit")
+    }
+
+    // ------------------------------------------------------------------ Scan: turn and walk
+
+    fun scan(act: Activity, back: () -> Unit) {
+        val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Ui.BG); setPadding(act.dp(18), act.dp(18), act.dp(18), act.dp(18)) }
+        val head = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        head.addView(act.tv("Scan", 24f, bold = true), LinearLayout.LayoutParams(0, -2, 1f))
+        val mic = act.tv("", 15f, Ui.MIC, bold = true); head.addView(mic)
+        head.addView(act.btn("?") { hint(act, "scan", true) }, LinearLayout.LayoutParams(act.dp(56), -2))
+        col.addView(head)
+        var mode = "turn"
+        val modeRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
+        val bTurn = act.btn("Turn") {}; val bWalk = act.btn("Walk") {}
+        fun paint() { bTurn.setTextColor(if (mode == "turn") Ui.OK else Ui.INK); bWalk.setTextColor(if (mode == "walk") Ui.OK else Ui.INK) }
+        bTurn.setOnClickListener { mode = "turn"; paint() }; bWalk.setOnClickListener { mode = "walk"; paint() }
+        modeRow.addView(bTurn, LinearLayout.LayoutParams(0, -2, 1f)); modeRow.addView(bWalk, LinearLayout.LayoutParams(0, -2, 1f))
+        col.addView(modeRow); paint()
+        val big = act.tv("—", 56f, Ui.INK, bold = true).apply { gravity = Gravity.CENTER }
+        val sub = act.tv("Tap Start.", 16f, Ui.MUTED).apply { gravity = Gravity.CENTER }
+        col.addView(big, LinearLayout.LayoutParams(-1, 0, 1f)); col.addView(sub)
+        var eng: ScanEngine? = null
+        var marks = 0
+        val markBtn = act.btn("MARK") {
+            val e = eng ?: return@btn
+            marks++; e.mark(if (mode == "turn") "ahead" else "spot$marks")
+            sub.text = if (mode == "turn") "Marked $marks time(s): pointing at the thing." else "Marked tape spot $marks."
+        }.apply { textSize = 30f; isEnabled = false }
+        col.addView(markBtn, LinearLayout.LayoutParams(-1, act.dp(120)).apply { topMargin = act.dp(12) })
+        val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
+        val ui = Handler(act.mainLooper)
+        val tick = object : Runnable { override fun run() {
+            val e = eng ?: return
+            big.text = String.format(Locale.US, "%.0f°", e.headingDeg)
+            if (!e.running) { stopIt(act, e, mic, sub, markBtn); eng = null; return }
+            sub.text = String.format(Locale.US, "%.0f s  ·  %d mark(s)", e.seconds, marks)
+            ui.postDelayed(this, 200)
+        } }
+        val start = act.btn("Start") {}
+        start.setOnClickListener {
+            if (eng == null) {
+                marks = 0
+                val e = ScanEngine(act, "field_scan_${Sonar.phoneName}_${mode}_${day()}", dry = false)
+                eng = e; e.start(); mic.text = "● Mic on"; start.text = "Stop"; markBtn.isEnabled = true
+                bTurn.isEnabled = false; bWalk.isEnabled = false
+                ui.post(tick)
+            } else {
+                val e = eng!!; eng = null; start.text = "Start"; bTurn.isEnabled = true; bWalk.isEnabled = true
+                stopIt(act, e, mic, sub, markBtn)
+            }
+        }
+        row.addView(start, LinearLayout.LayoutParams(0, -2, 1f))
+        row.addView(act.btn("‹ Menu") { eng?.let { stopIt(act, it, mic, sub, markBtn) }; eng = null; back() }, LinearLayout.LayoutParams(0, -2, 1f))
+        col.addView(row)
+        onBack(act) { eng?.let { stopIt(act, it, mic, sub, markBtn) }; eng = null; back() }
+        act.setContentView(col)
+        hint(act, "scan")
+    }
+
+    private fun stopIt(act: Activity, e: ScanEngine, mic: TextView, sub: TextView, markBtn: Button) {
+        markBtn.isEnabled = false; mic.text = ""; sub.text = "Saving..."
+        Thread { e.stop(); act.runOnUiThread { sub.text = "Saved. Thanks." } }.start()
     }
 
     // ------------------------------------------------------------------ Screen 4: Watch
