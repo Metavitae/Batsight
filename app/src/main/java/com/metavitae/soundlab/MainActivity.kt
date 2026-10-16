@@ -113,8 +113,20 @@ class MainActivity : Activity() {
         if (need.isEmpty()) f() else { pendingMic = f; requestPermissions(need.toTypedArray(), 1) }
     }
 
+    /** Hive mode needs the nearby-devices permissions (Bluetooth / Wi-Fi peers; Android 13+ also "nearby Wi-Fi"). */
+    fun withNearby(f: () -> Unit) {
+        val want = ArrayList<String>()
+        if (android.os.Build.VERSION.SDK_INT >= 31) want += listOf("android.permission.BLUETOOTH_SCAN", "android.permission.BLUETOOTH_ADVERTISE", "android.permission.BLUETOOTH_CONNECT")
+        if (android.os.Build.VERSION.SDK_INT >= 33) want += "android.permission.NEARBY_WIFI_DEVICES"
+        want += listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+        val need = want.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+        if (need.isEmpty()) f() else { pendingNearby = f; requestPermissions(need.toTypedArray(), 2) }
+    }
+    private var pendingNearby: (() -> Unit)? = null
+
     override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, res: IntArray) {
         super.onRequestPermissionsResult(code, perms, res)
+        if (code == 2) { val f = pendingNearby; pendingNearby = null; f?.invoke(); return }   // hive: go on even if some were refused (the link reports what fails)
         val f = pendingMic
         pendingMic = null
         if (res.isNotEmpty() && res.all { it == PackageManager.PERMISSION_GRANTED }) f?.invoke() else showMenu()

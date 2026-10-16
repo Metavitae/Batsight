@@ -19,12 +19,60 @@ object AppScreen {
     private var web: WebView? = null
     private var watch: WatchEngine? = null
     private var live: LiveEngine? = null
+    private var hive: Hive? = null
+    @Volatile private var hsMine: Double? = null; @Volatile private var hsPeer: Double? = null; @Volatile private var hsPeerTag = "?"
+
+    /** Sound handshake (lab task 4c recipe: 8-15 kHz, 20 ms, -20 dBFS). Each phone chirps at its own slot and records
+     *  both chirps; "other minus own" arrival on each phone, added together, gives twice the distance / C
+     *  (two-way ranging: no clock sync needed). SELF = own speaker-to-mic ~2 cm (lab, matched to tape). */
+    private fun handshake(act: Activity, tag: String) {
+        val hs = Signals.one(Signals.parse("chirp,f0=8000,f1=15000,ms=20,db=-20")[0], Sonar.RATE)
+        val slot = ((tag[0] - 'A').coerceIn(0, 2)) * 800 + 300
+        val total = Sonar.RATE * 2600 / 1000
+        val l = FloatArray(total); val at = slot * Sonar.RATE / 1000
+        for (k in hs.indices) l[at + k] = hs[k]
+        val am = act.getSystemService(android.media.AudioManager::class.java)
+        val vol = (am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC) * 0.6).toInt()
+        val id = "app_handshake_${Sonar.phoneName}_${tag}_${Field.day()}"
+        val job = PlayRecord(act, PlayRecord.Params(id, null, null, "unprocessed", 1, Sonar.RATE, -1, "speaker", vol, 200, 600, 0, 0, false, false, true, stereo = Stereo(l, l.copyOf())))
+        try { job.run() } catch (t: Throwable) { job.restoreVolume(); js(act, "window.batHive && batHive({type:'hserr'})"); return }
+        val x = job.lastSamples ?: return
+        val ch = job.lastChannels
+        val mono = DoubleArray(x.size / ch) { x[it * ch] / 32768.0 }
+        val (mr, mi) = Dsp.matched(mono, hs.map { it.toDouble() }.toDoubleArray())
+        val e = Dsp.env(mr, mi)
+        var own = 0; for (i in e.indices) if (e[i] > e[own]) own = i
+        val guard = Sonar.RATE * 30 / 1000
+        var oth = -1; for (i in e.indices) if (kotlin.math.abs(i - own) > guard && (oth < 0 || e[i] > e[oth])) oth = i
+        val ok = oth >= 0 && e[oth] > 20 * medianOf(e)
+        val diff = if (ok) Dsp.interpPeak(e, oth) - Dsp.interpPeak(e, own) else Double.NaN
+        Results.save(act, "${id}_hs.json", "application/json", Json().put("tag", tag).put("own", own).put("other", oth).put("diff_samples", diff)
+            .put("own_level", e[own]).put("other_level", if (oth >= 0) e[oth] else 0.0).put("ok", ok).toString().toByteArray())
+        if (!ok) { js(act, "window.batHive && batHive({type:'hserr'})"); hive?.send(org.json.JSONObject().put("t", "hsres").put("ok", false)); return }
+        hsMine = diff
+        hive?.send(org.json.JSONObject().put("t", "hsres").put("ok", true).put("diff", diff))
+        hsFinish(act)
+    }
+
+    private fun medianOf(e: DoubleArray): Double { val s = e.sorted(); return s[s.size / 2] + 1e-12 }
+
+    @Synchronized private fun hsFinish(act: Activity) {
+        val a = hsMine ?: return; val b = hsPeer ?: return
+        val d = Dsp.C / 2 * (a + b) / Sonar.RATE + 0.02
+        hsMine = null; hsPeer = null
+        val me = hive?.myTag() ?: "A"
+        Results.save(act, "app_handshake_${Sonar.phoneName}_result_${Field.day()}.json", "application/json",
+            Json().put("me", me).put("other", hsPeerTag).put("distance_m", d).put("mine", a).put("peer", b).toString().toByteArray())
+        js(act, "window.batHive && batHive({type:'hs',d:$d,me:'$me',other:'$hsPeerTag'})")
+    }
 
     private fun js(act: Activity, code: String) = act.runOnUiThread { web?.evaluateJavascript(code, null) }
 
     /** Called from MainActivity.onPause / onResume: nothing keeps pinging or holds the camera in the background. */
-    fun pause() { stopAll(); web?.evaluateJavascript("window.batPause && batPause()", null) }
+    fun pause() { stopAll(); stopHive(); web?.evaluateJavascript("window.batPause && batPause()", null) }
     fun resume() { web?.evaluateJavascript("window.batResume && batResume()", null) }
+
+    fun stopHive() { hive?.stop(); hive = null }
 
     fun stopAll() {
         watch?.let { Thread { it.stop() }.start() }; watch = null
@@ -53,6 +101,33 @@ object AppScreen {
                 try { act.getSystemService(android.os.Vibrator::class.java)?.vibrate(android.os.VibrationEffect.createOneShot(ms.toLong().coerceIn(10, 300), 180)) } catch (_: Exception) {}
             }
             @JavascriptInterface fun save(name: String, json: String) { Results.save(act, name, "application/json", json.toByteArray()) }
+
+            // ---- Hive: join (nearby link) + sound handshake
+            @JavascriptInterface fun hiveJoin() = act.runOnUiThread {
+                act.withNearby {
+                    if (hive == null) {
+                        val h = Hive(act) { kind, j ->
+                            when (kind) {
+                                "peers", "error" -> js(act, "window.batHive && batHive(" + j.put("type", kind).toString() + ")")
+                                "msg" -> when (j.optString("t")) {
+                                    "hs" -> { hsPeerTag = j.optString("from"); val me = hive?.myTag() ?: "B"; Thread { Thread.sleep(j.optLong("in", 600)); handshake(act, me) }.start()
+                                              js(act, "window.batHive && batHive({type:'hsgo'})") }
+                                    "hsres" -> { if (j.optBoolean("ok")) { hsPeer = j.optDouble("diff"); hsPeerTag = j.optString("from"); hsFinish(act) } else js(act, "window.batHive && batHive({type:'hserr'})") }
+                                }
+                            }
+                        }
+                        hive = h; h.start()
+                    }
+                    js(act, "window.batHive && batHive(" + hive!!.status().put("type", "peers").toString() + ")")
+                }
+            }
+            @JavascriptInterface fun hiveHandshake() {
+                val h = hive ?: return
+                stopAll(); hsMine = null; hsPeer = null
+                h.send(org.json.JSONObject().put("t", "hs").put("in", 700))
+                val me = h.myTag()
+                Thread { Thread.sleep(700); handshake(act, me) }.start()
+            }
 
             // ---- Screen 2: one Listen, answer as JSON
             @JavascriptInterface fun focusListen() {

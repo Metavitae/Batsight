@@ -34,3 +34,8 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
 }
+
+dependencies {
+    // Hive mode link: Android's nearby-devices link (Bluetooth / direct Wi-Fi, no internet)
+    implementation("com.google.android.gms:play-services-nearby:19.3.0")
+}

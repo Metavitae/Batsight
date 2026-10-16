@@ -56,16 +56,17 @@ var cl=$("oclose"); if(cl)cl.onclick=closeOv;
 }
 
 /* ================= Tabs ================= */
-var TITLES={F:"Focus in the dark",L:"Listen",W:"Walk, eyes free",H:"Watch, hands free"}, tab="F";
+var TITLES={J:"Join",F:"Focus in the dark",L:"Listen",W:"Walk, eyes free",H:"Watch, hands free"}, tab="F";
 function stopRunning(){ if(running){Bat.stop();running=null;mic(false);} resetButtons(); }
 function setTab(t){
 if(t===tab)return; stopRunning(); tab=t;
-["F","L","W","H"].forEach(function(k){$("t"+k).setAttribute("aria-selected",k===t);$("s"+k).hidden=k!==t;});
+["J","F","L","W","H"].forEach(function(k){$("t"+k).setAttribute("aria-selected",k===t);$("s"+k).hidden=k!==t;});
+if(t==="J")Bat.hiveJoin();
 $("title").textContent=TITLES[t];
 if(t==="F")camOn(); else camOff();
 }
-["F","L","W","H"].forEach(function(k){$("t"+k).addEventListener("click",function(){setTab(k);});});
-$("help").addEventListener("click",function(){openOv(tab);});
+["J","F","L","W","H"].forEach(function(k){$("t"+k).addEventListener("click",function(){setTab(k);});});
+$("help").addEventListener("click",function(){ if(tab==="J"){return;} openOv(tab);});
 $("lab").addEventListener("click",function(e){e.preventDefault();stopRunning();camOff();Bat.lab();});
 window.batBack=function(){ if(!$("ov").hidden){closeOv();return true;} if(running){stopRunning();return true;} if(tab!=="F"){setTab("F");return true;} return false; };
 function resetButtons(){ $("lgo").textContent="Start"; $("wgo").textContent="Start"; $("hgo").textContent="Start"; }
@@ -285,6 +286,44 @@ wStatus("Learning the room","var(--muted)","Keep still for a few seconds."); Bat
 /* APP: app hidden or phone locked -> stop sounds and let go of the camera; back -> camera again on Focus */
 window.batPause=function(){ stopRunning(); camOff(); };
 window.batResume=function(){ if(tab==="F")camOn(); };
+
+/* ================= Join (Chat: Shared scanning screens) ================= */
+var COL={A:"#8FE8F2",B:"#FF9EC7",C:"#C7B8FF"}, SH={A:"circle",B:"square",C:"triangle"}, NAMEC={A:"cyan",B:"pink",C:"violet"};
+function jel(t,a,p){var e=document.createElementNS(NS,t);for(var k in a)e.setAttribute(k,a[k]);p.appendChild(e);return e}
+function tagSvg(id,x,y,p,r){r=r||8;var c=COL[id]||"#9AAED0";
+if(SH[id]==="circle")jel("circle",{cx:x,cy:y,r:r,fill:c},p);else if(SH[id]==="square")jel("rect",{x:x-r,y:y-r,width:2*r,height:2*r,rx:2,fill:c},p);
+else jel("path",{d:"M"+x+" "+(y-r-1)+" L"+(x+r+1)+" "+(y+r)+" L"+(x-r-1)+" "+(y+r)+" Z",fill:c},p);
+var t=jel("text",{x:x,y:y+4,"text-anchor":"middle","font-size":11,"font-weight":600,fill:"#06101F"},p);t.textContent=id;}
+var meTag=null, otherTag=null;
+function jdraw(found){var g=$("jsvg");g.innerHTML="";
+jel("line",{x1:70,y1:80,x2:230,y2:80,stroke:"#2A3F66","stroke-dasharray":"3 5"},g);
+[[52,meTag||"A"],[248,otherTag||(meTag==="A"?"B":"A")]].forEach(function(q){var x=q[0],id=q[1];
+jel("rect",{x:x-18,y:40,width:36,height:80,rx:7,fill:"#101D33",stroke:COL[id],"stroke-width":2},g);tagSvg(id,x,80,g);});
+if(found){[0,1,2].forEach(function(i){jel("circle",{cx:52+i*8,cy:80,r:30+i*34,fill:"none",stroke:"#8FE8F2","stroke-opacity":(0.45-i*0.12)},g)});}}
+function jset(h,p,big,sub){$("j-h").textContent=h;$("j-p").textContent=p;$("j-big").textContent=big;$("j-sub").textContent=sub}
+function showMyTag(){var m=$("mytag"); if(!meTag){m.className="";return;} m.innerHTML='<svg width="20" height="20" viewBox="0 0 20 20"><g id="mtg"></g></svg>Phone '+meTag; tagSvg(meTag,10,10,m.querySelector("#mtg"),8); m.className="on";}
+function jready(peers){
+if(peers>0){jset("1. Face the phones","Hold the phones facing each other, about 20 to 60 cm apart. Not side by side.","Ready","Both phones are on this screen.");$("j-go").disabled=false;}
+else{jset("1. Face the phones","Open Join on both phones. Hold them facing each other, about 20 to 60 cm apart. Not side by side.","Looking for the other phone…","Open Batsight on the other phone and tap Join there too.");$("j-go").disabled=true;}
+}
+window.batHive=function(ev){
+if(ev.type==="peers"){ meTag=ev.me; if(ev.peers>0){otherTag=(ev.tags||"").split(",")[0]||null;} showMyTag(); jdraw(false);
+ if($("j-next").hidden&&!running) jready(ev.peers);
+ if(ev.dropped){ $("j-sub").textContent="The other phone dropped out."; } return; }
+if(ev.type==="error"){ jset("Can't reach the other phone","The nearby link didn't start ("+(ev.why||ev.where)+"). Check Bluetooth is on, then tap Join again.","Not connected",""); return; }
+if(ev.type==="hsgo"){ running="hs"; mic(true); $("j-go").hidden=true; jdraw(true); jset("2. Listen to each other","Keep still for a few seconds. You will hear short chirps, like birds.","Chirping…","About 3 seconds."); return; }
+if(ev.type==="hserr"){ running=null; mic(false); $("j-go").hidden=false; jdraw(false); jset("1. Face the phones","They didn't hear each other. Hold them facing each other, 20 to 60 cm apart, and try again.","Try again","Both phones must be on this screen."); return; }
+if(ev.type==="hs"){ running=null; mic(false); meTag=ev.me; otherTag=ev.other; showMyTag(); jdraw(false);
+ jset("3. Is this your other phone?","Check that the other phone shows the same name tag: the "+(NAMEC[ev.other]||"")+" "+(SH[ev.other]||"")+" "+ev.other+".","Found: "+(NAMEC[ev.other]||"")+" "+(SH[ev.other]||"")+" "+ev.other,ev.d.toFixed(2)+" m away, facing you.");
+ $("j-next").hidden=false;$("j-no").hidden=false; return; }
+};
+$("j-go").addEventListener("click",function(){ if($("j-go").disabled)return; running="hs"; mic(true); $("j-go").hidden=true; jdraw(true);
+jset("2. Listen to each other","Keep still for a few seconds. You will hear short chirps, like birds.","Chirping…","About 3 seconds."); Bat.hiveHandshake(); });
+$("j-no").addEventListener("click",function(){$("j-next").hidden=true;$("j-no").hidden=true;$("j-go").hidden=false;jready(1);jdraw(false);});
+$("j-next").addEventListener("click",function(){ $("j-next").hidden=true;$("j-no").hidden=true;
+jset("4. Place them in the room","Put each phone where it will stay, with its long side facing the room.","Joined as "+meTag+" and "+otherTag,"Next, choose a screen above. Shared maps come in the next update.");
+$("j-go").hidden=false;$("j-go").textContent="Start again"; });
+jdraw(false);
 
 /* ================= start ================= */
 camOn();

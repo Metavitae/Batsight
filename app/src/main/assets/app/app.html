@@ -28,7 +28,7 @@ h1{margin:0;font-size:18px;font-weight:600;letter-spacing:.02em;text-wrap:balanc
 .mic i{width:9px;height:9px;border-radius:50%;background:var(--unk)}
 .mic.on i{background:#FF5A5A;box-shadow:0 0 0 4px rgba(255,90,90,.2)}
 button.q{width:44px;min-height:44px;padding:0;border-radius:50%;font-size:17px}
-[role=tablist]{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}   /* APP: 4 tabs must fit phones with large text (8T) */
+[role=tablist]{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}   /* APP: 4 tabs must fit phones with large text (8T) */
 [role=tab]{font:500 14px var(--font);letter-spacing:0;padding:0 2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);background:transparent;border:1px solid var(--edge);border-radius:12px;min-height:44px;cursor:pointer}
 [role=tab][aria-selected="true"]{color:var(--ink);border-color:var(--line);background:#16284A}
 button{font:500 15px var(--font);letter-spacing:.04em;color:var(--ink);background:transparent;border:1px solid #3b5380;border-radius:999px;min-height:44px;padding:0 20px;cursor:pointer}
@@ -107,17 +107,36 @@ ol li::before{content:counter(s);width:28px;height:28px;border-radius:50%;border
 @keyframes sw{0%,100%{transform:rotate(-40deg)}50%{transform:rotate(40deg)}}
 @media (prefers-reduced-motion:reduce){.ring,.sweep{animation:none}.ring{opacity:.35}.glow{transition:none}}
 .foot a{color:var(--muted);text-decoration:underline}
+/* ---- Join (Chat: Shared scanning screens) ---- */
+.step{background:var(--panel);border:1px solid #1E2F4F;border-radius:16px;padding:14px 16px}
+.step h3{margin:0 0 4px;font-size:15px;font-weight:600}
+.step p{margin:0;font-size:14px;line-height:1.5;color:var(--muted)}
+.jview{position:relative;background:#050A14;border:1px solid #1E2F4F;border-radius:22px;overflow:hidden;padding:12px}
+.jview svg{display:block;width:100%;height:auto}
+.jcap{text-align:center;padding:0 14px 8px}
+#mytag{display:none;align-items:center;gap:6px;border:1px solid #3b5380;border-radius:999px;padding:2px 10px 2px 4px;font-size:13px}
+#mytag.on{display:inline-flex}
 </style>
 </head>
 <body>
 <main>
-<header><h1 id="title">Focus in the dark</h1><div class="hr"><div class="mic" id="mic"><i></i><span id="miclabel">Mic off</span></div><button class="q" id="help" aria-label="Help for this screen">?</button></div></header>
+<header><h1 id="title">Focus in the dark</h1><div class="hr"><span id="mytag"></span><div class="mic" id="mic"><i></i><span id="miclabel">Mic off</span></div><button class="q" id="help" aria-label="Help for this screen">?</button></div></header>
 <div role="tablist" aria-label="Screens">
+<button role="tab" id="tJ" aria-selected="false">Join</button>
 <button role="tab" id="tF" aria-selected="true">Focus</button>
 <button role="tab" id="tL" aria-selected="false">Listen</button>
 <button role="tab" id="tW" aria-selected="false">Walk</button>
 <button role="tab" id="tH" aria-selected="false">Watch</button>
 </div>
+
+<!-- JOIN (Chat: Shared scanning screens, Join tab) -->
+<section id="sJ" hidden>
+<div class="step"><h3 id="j-h">1. Face the phones</h3><p id="j-p">Open Join on both phones. Hold them facing each other, about 20 to 60 cm apart. Not side by side.</p></div>
+<div class="jview"><svg viewBox="0 0 300 160" role="img" aria-label="Two phones facing each other"><g id="jsvg"></g></svg>
+<div class="jcap"><div class="big" id="j-big">Looking for the other phone…</div><div class="sub" id="j-sub">Open Batsight on the other phone and tap Join there too.</div>
+<div class="row" style="justify-content:center;margin-top:10px"><button class="b p" id="j-go" disabled>Start the handshake</button><button class="b p" id="j-next" hidden>Yes, that's it</button><button class="b" id="j-no" hidden>No, try again</button></div></div></div>
+<p class="fine">The phones chirp to each other and measure how far apart they are. The name tag (a shape and a letter) is how you know which phone is which on every screen. The phones find each other over Bluetooth or Wi-Fi between them; nothing goes to the internet. Shared maps on the other screens come next.</p>
+</section>
 
 <!-- SCREEN 2 -->
 <section id="sF">
