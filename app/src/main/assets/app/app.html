@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Batsight</title>
+<!--
+  The app's screens, built from Chat's design sources in Drive Art/Working (2026-10-15):
+  "Onboarding - source", "Screen 2 Focus in the dark - drawing source v2 with Two things found",
+  "Screens 1, 3, 4 - drawing source v3 with known movers". Same tokens, CSS and words; the made-up scenes are
+  replaced by the phone's real measurements (window.Bat bridge, AppScreen.kt). Changes from Chat's drawings are
+  marked APP. Not built yet: known movers (waits for the follow-the-mover test), direction arrows (unproven).
+-->
+<style>
+@font-face{font-family:"Outfit";font-weight:500 600;src:url(../intro/outfit.woff2) format("woff2")}
+:root{
+--bg:#0B1526; --panel:#0E1A2E; --ink:#E6EEFF; --muted:#9AAED0; --line:#8FE8F2;
+--ok:#3DDC97; --warn:#F2B84B; --unk:#7F8DA8; --eye:#4D8DFF; --echo:#8FE8F2; --edge:#1E2F4F;
+--font:"Outfit","Futura","Century Gothic",system-ui,sans-serif;
+color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);-webkit-tap-highlight-color:transparent;
+padding-block:16px 28px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+main{max-width:380px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px}
+h1{margin:0;font-size:18px;font-weight:600;letter-spacing:.02em;text-wrap:balance}
+.hr{display:flex;align-items:center;gap:10px}
+.mic{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);letter-spacing:.04em;white-space:nowrap}
+.mic i{width:9px;height:9px;border-radius:50%;background:var(--unk)}
+.mic.on i{background:#FF5A5A;box-shadow:0 0 0 4px rgba(255,90,90,.2)}
+button.q{width:44px;min-height:44px;padding:0;border-radius:50%;font-size:17px}
+[role=tablist]{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+[role=tab]{font:500 14px var(--font);letter-spacing:.03em;color:var(--muted);background:transparent;border:1px solid var(--edge);border-radius:12px;min-height:44px;cursor:pointer}
+[role=tab][aria-selected="true"]{color:var(--ink);border-color:var(--line);background:#16284A}
+button{font:500 15px var(--font);letter-spacing:.04em;color:var(--ink);background:transparent;border:1px solid #3b5380;border-radius:999px;min-height:44px;padding:0 20px;cursor:pointer}
+button:focus-visible,[role=tab]:focus-visible{outline:2px solid var(--line);outline-offset:3px}
+button.b{font:500 14px var(--font);letter-spacing:.03em;padding:0 16px}
+button.p{background:var(--eye);border-color:var(--eye);color:#06101F;font-weight:600}
+button:disabled{opacity:.5}
+section{display:flex;flex-direction:column;gap:12px}
+section[hidden],.row[hidden],button[hidden],div[hidden]{display:none!important}
+.row{display:flex;flex-wrap:wrap;gap:8px}
+.fine{font-size:12.5px;line-height:1.55;color:var(--muted);margin:0;text-wrap:pretty}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12.5px;color:var(--muted)}
+.legend span::before{content:"";display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px;background:var(--c);border:var(--b,0)}
+.tag{display:inline-block;font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;border-radius:999px;padding:3px 10px;border:1px solid var(--unk);color:var(--unk)}
+
+/* ---- Screen 2 (Chat: Focus in the dark v2) ---- */
+#view{position:relative;aspect-ratio:3/4;width:100%;background:#050A14;border-radius:22px;overflow:hidden;border:1px solid #1E2F4F}
+#cam{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#050A14}   /* APP: the real camera instead of the drawn scene */
+#frame{position:absolute;left:50%;top:46%;width:46%;aspect-ratio:1;transform:translate(-50%,-50%);transition:border-color .3s;border:2px solid #ffffff55;border-radius:6px}
+#frame.ok{border-color:var(--ok)}
+#frame.unk{border:2px dashed var(--unk)}
+#frame.two{border:2px dashed var(--warn)}
+#frame2{position:absolute;left:50%;top:46%;width:30%;aspect-ratio:1;transform:translate(-50%,-50%);border:2px dashed var(--warn);border-radius:5px;display:none}
+#frame2.on{display:block}
+#rings{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+#read{position:absolute;left:0;right:0;bottom:0;padding:14px 16px 16px;background:linear-gradient(transparent,#050A14ee 55%);text-align:center}
+#dist{font-size:44px;font-weight:600;letter-spacing:.01em;font-variant-numeric:tabular-nums;line-height:1.05;min-height:46px}
+#dist small{font-size:18px;font-weight:500;color:var(--muted);margin-left:4px}
+#status{font-size:14px;letter-spacing:.06em;text-transform:uppercase;margin-top:4px;font-weight:500}
+.s-ok{color:var(--ok)} .s-unk{color:var(--unk)} .s-warn{color:var(--warn)} .s-idle{color:var(--muted)} .s-two{color:var(--warn)}
+#note{margin:0;min-height:3em;font-size:14px;line-height:1.5;color:var(--muted);text-wrap:pretty}
+#pick{display:flex;gap:10px}
+#pick button{flex:1;min-height:56px;border-radius:14px;line-height:1.3;border-color:var(--warn);font-size:14px;padding:0 6px}
+#pick button b{display:block;font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
+#listen{width:100%;background:var(--eye);border-color:var(--eye);color:#06101F;font-weight:600;min-height:52px;font-size:16px}
+.ask{display:flex;flex-direction:column;gap:8px;border:1px solid var(--edge);border-radius:16px;padding:12px 14px;font-size:14px;color:var(--ink)}   /* APP: the test question, Chat's button style */
+.ask .row button{flex:1}
+
+/* ---- Screens 1, 3, 4 (Chat: v3) ---- */
+.view{position:relative;aspect-ratio:3/4;width:100%;background:#050A14;border-radius:22px;overflow:hidden;border:1px solid var(--edge)}
+.view svg{position:absolute;inset:0;width:100%;height:100%}
+.cap{position:absolute;left:0;right:0;bottom:0;padding:12px 16px 14px;text-align:center;background:linear-gradient(transparent,#050A14ee 50%)}
+.big{font-size:26px;font-weight:600;line-height:1.15;text-wrap:balance}
+.sub{font-size:13px;color:var(--muted);margin-top:4px;line-height:1.4}
+#walkview{background:#000}
+.glow{position:absolute;transition:opacity .15s}
+#gc{left:0;right:0;top:0;height:40%;background:linear-gradient(180deg,var(--warn),transparent);opacity:0}
+#buzz{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);font-size:28px;font-weight:600;color:#FF6A6A;opacity:0;letter-spacing:.1em}
+.notsafe{position:absolute;top:12px;left:0;right:0;text-align:center}
+#wstate{font-size:30px;font-weight:600;text-wrap:balance}
+.toptag{position:absolute;top:12px;left:0;right:0;text-align:center}
+
+/* ---- Onboarding (Chat: Onboarding source) ---- */
+#ov{position:fixed;inset:0;background:rgba(5,10,20,.94);display:flex;align-items:center;justify-content:center;padding:16px;z-index:5;overflow:auto}
+.card{background:var(--panel);border:1px solid var(--edge);border-radius:22px;padding:16px;display:flex;flex-direction:column;gap:12px;max-width:380px;width:100%}
+.art{background:#050A14;border-radius:16px;aspect-ratio:5/3;width:100%;overflow:hidden}
+.art svg{width:100%;height:100%;display:block}
+.card h2{margin:0;font-size:22px;font-weight:600;line-height:1.2;text-wrap:balance}
+.txt{margin:0;font-size:15px;line-height:1.55;color:#C9D6EE;text-wrap:pretty}
+ol{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:10px;counter-reset:s}
+ol li{counter-increment:s;display:grid;grid-template-columns:28px 1fr;gap:10px;font-size:15px;line-height:1.5;color:#C9D6EE}
+ol li::before{content:counter(s);width:28px;height:28px;border-radius:50%;border:1px solid #3b5380;display:grid;place-items:center;font-size:13px;color:var(--line);margin-top:-2px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted);border:1px solid var(--edge);border-radius:999px;padding:5px 11px}
+.chip i{width:10px;height:10px;border-radius:2px;background:var(--c);border:var(--b,0)}
+.dots{display:flex;gap:7px;justify-content:center}
+.dots i{width:8px;height:8px;border-radius:50%;background:#2A3F66}
+.dots i.on{background:var(--line)}
+.row.end{justify-content:space-between}
+.near{font-size:14px;color:var(--muted);border-top:1px solid var(--edge);padding-top:10px;line-height:1.5}
+.near b{color:var(--ink)}
+.ring{transform-box:fill-box;transform-origin:center;animation:ping 2.6s ease-out infinite}
+.ring.r2{animation-delay:.9s}.ring.r3{animation-delay:1.8s}
+@keyframes ping{0%{transform:scale(.2);opacity:.7}100%{transform:scale(1.6);opacity:0}}
+.sweep{animation:sw 3.6s ease-in-out infinite;transform-origin:150px 168px}
+@keyframes sw{0%,100%{transform:rotate(-40deg)}50%{transform:rotate(40deg)}}
+@media (prefers-reduced-motion:reduce){.ring,.sweep{animation:none}.ring{opacity:.35}.glow{transition:none}}
+.foot a{color:var(--muted);text-decoration:underline}
+</style>
+</head>
+<body>
+<main>
+<header><h1 id="title">Focus in the dark</h1><div class="hr"><div class="mic" id="mic"><i></i><span id="miclabel">Mic off</span></div><button class="q" id="help" aria-label="Help for this screen">?</button></div></header>
+<div role="tablist" aria-label="Screens">
+<button role="tab" id="tF" aria-selected="true">Focus</button>
+<button role="tab" id="tL" aria-selected="false">Listen</button>
+<button role="tab" id="tW" aria-selected="false">Walk</button>
+<button role="tab" id="tH" aria-selected="false">Watch</button>
+</div>
+
+<!-- SCREEN 2 -->
+<section id="sF">
+<div id="view" role="img" aria-label="Camera view with a focus frame">
+<video id="cam" playsinline muted autoplay></video>
+<svg id="rings" viewBox="0 0 300 400" preserveAspectRatio="xMidYMid slice"><g id="ringg"></g></svg>
+<div id="frame"></div><div id="frame2"></div>
+<div id="read"><div id="dist">&nbsp;</div><div id="status" class="s-idle">Aim and tap Listen</div></div>
+</div>
+<p id="note" aria-live="polite">Aim at one thing, then tap Listen.</p>
+<div id="pick" hidden></div>
+<div class="ask" id="ask" hidden><span id="askq">Was that the thing you aimed at?</span><div class="row"><button class="b" data-a="yes">Yes</button><button class="b" data-a="no">No</button></div></div>
+<button id="listen">Listen</button>
+<p class="fine">Green appears only when the echo is clear. If the sound hears nothing sure, the frame stays grey and dashed and the phone says so; it never guesses green.</p>
+</section>
+
+<!-- SCREEN 1 -->
+<section id="sL" hidden>
+<div class="view">
+<svg id="radar" viewBox="0 0 300 300" preserveAspectRatio="xMidYMax meet" aria-label="Room map seen from above, phone at the bottom"></svg>
+<div class="toptag"><span class="tag">Experimental: direction is being tested</span></div>
+<div class="cap"><div class="big" id="r-big">Sweep the phone slowly</div><div class="sub" id="r-sub">Tap Start, then turn slowly left and right. Echoes light up where you point and fade.</div></div>
+</div>
+<div class="row"><button class="b p" id="lgo">Start</button><button class="b" id="rclear">Start over</button></div>
+<div class="legend"><span style="--c:var(--echo)">Echo seen</span><span style="--c:var(--ok)">Confirmed clear</span><span style="--c:transparent;--b:1px dashed var(--unk)">Can't tell</span></div>
+<p class="fine">Green is earned only where the sound went past 3 m and came back from farther away, on two passes. A direction with no echo at all stays a grey "?", because smooth glass looks exactly like that. Where the phone points comes from its motion sensor, and that is still being tested.</p>
+</section>
+
+<!-- SCREEN 3 -->
+<section id="sW" hidden>
+<div class="view" id="walkview">
+<div class="glow" id="gc"></div>
+<div class="notsafe"><span class="tag">Testing only, not a safety device</span></div>
+<div id="buzz">BUZZ</div>
+<div class="cap"><div id="wstate">Screen stays dark</div><div class="sub" id="wsub">Tap Start. A soft glow shows what is close ahead. Ticks speed up as it gets closer.</div></div>
+</div>
+<div class="row"><button class="b p" id="wgo">Start</button><button class="b" id="sound">Turn on tick sound</button></div>
+<p class="fine">Tick speed: far = slow, near = fast. Under 0.4 m the phone buzzes. Nothing here is ever green: this screen never tells you the way is clear, only what is close. It cannot see glass, so it never says "safe". Left and right glows come once direction is proven; for now it only tells what is ahead.</p>
+</section>
+
+<!-- SCREEN 4 -->
+<section id="sH" hidden>
+<div class="view">
+<svg id="wmap" viewBox="0 0 300 400" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Room seen from above, phone at the bottom, with where something moved"></svg>
+<div class="cap"><div class="big" id="w-big" style="color:var(--muted)">Not watching</div><div class="sub" id="w-sub">Lay the phone still, then tap Start.</div>
+<div class="row" id="w-ask2" style="justify-content:center;margin-top:10px" hidden><button class="b p" id="w-yes">Keep as normal</button><button class="b" id="w-no">No, keep watching</button></div></div>
+</div>
+<div class="row"><button class="b p" id="hgo">Start</button></div>
+<div class="legend"><span style="--c:var(--warn)">Where it moved</span><span style="--c:var(--ok)">Still</span></div>
+<p class="fine">"Still" never means the room is empty or safe; this is a watching aid, not a security device. For now it shows how far, not which way (a ring, not a point). Telling who is known comes after its own test.</p>
+</section>
+
+<p class="fine foot">Quiet, high chirps: keep pets and sleeping people out of the room. <a href="#" id="lab">Lab</a></p>
+</main>
+<div id="ov" hidden><div class="card" id="card"></div></div>
+
+<script src="app.js"></script>
+</body></html>

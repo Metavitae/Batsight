@@ -84,7 +84,8 @@ class MainActivity : Activity() {
                 e.start()
                 Thread { while (e.running) Thread.sleep(200); e.stop(); busy = false; runOnUiThread { scrollPage { text("Scan saved.", 20f); button("‹ Back to menu") { showMenu() } } } }.start()
             }
-            null -> if (b == null) Intro.show(this, null) { showSafety() } else showSafety()   // from the app icon: Kithe intro first
+            "app" -> showApp()   // CC: open Chat's screens directly (no intro sound)
+            null -> if (b == null) Intro.show(this, null) { showApp() } else showApp()   // from the app icon: Kithe intro, then Chat's screens (tour on first open)
             "intro" -> Intro.show(this, i.getStringExtra("id") ?: "intro_${stamp()}") { showSafety() }   // test: writes <id>.json
             else -> showMenu()
         }
@@ -134,6 +135,11 @@ class MainActivity : Activity() {
     }
 
     // ------------------------------------------------------------------ menu
+
+    /** The real app: Chat's screens in a WebView (AppScreen). "Lab" opens the old test menu; Back there returns here. */
+    fun showApp() {
+        withMicAndCamera { AppScreen.show(this) { showMenu(); backHook = { showApp() } } }
+    }
 
     private fun showMenu() {
         backHook = null
