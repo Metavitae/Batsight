@@ -114,7 +114,10 @@ object Field {
 
     // ------------------------------------------------------------------ menu
 
+    private fun onBack(act: Activity, f: () -> Unit) { (act as? MainActivity)?.backHook = f }
+
     fun menu(act: Activity, back: () -> Unit) {
+        onBack(act, back)
         val pf = act.getSharedPreferences("hints", Context.MODE_PRIVATE)
         if (!pf.getBoolean("facts_saved", false)) { pf.edit().putBoolean("facts_saved", true).apply(); Thread { try { saveFacts(act) } catch (_: Throwable) {} }.start() }
         val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; setPadding(act.dp(20), act.dp(28), act.dp(20), act.dp(28)) }
@@ -226,6 +229,7 @@ object Field {
         root.addView(panel, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
 
         val cam = Cam(act, texture)
+        onBack(act) { cam.close(); back() }
         texture.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
             override fun onSurfaceTextureAvailable(s: SurfaceTexture, a: Int, b: Int) { try { cam.open() } catch (_: Throwable) {} }
             override fun onSurfaceTextureSizeChanged(s: SurfaceTexture, a: Int, b: Int) {}
@@ -329,6 +333,7 @@ object Field {
         head.addView(act.btn("?") { hint(act, "kit", true) }, LinearLayout.LayoutParams(act.dp(56), -2))
         col.addView(head)
         col.addView(act.tv("Point the phone, pick what it faces, tap Record. Fill the numbers only if you know them.", 13f, Ui.MUTED))
+        onBack(act, back)
         var tag = "object"; var speaker = "both"
         val tagRow = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
         val tags = listOf("glass", "mirror", "wall", "open space", "person", "object", "curtain", "other")
@@ -395,6 +400,7 @@ object Field {
         val row = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
         root.addView(row)
         var eng: WatchEngine? = null
+        onBack(act) { eng?.stop(); eng = null; back() }
         val keep = act.btn("Keep as normal") { eng?.adopt() }.apply { visibility = View.GONE }
         val start = act.btn("Start") {}
         start.setOnClickListener {

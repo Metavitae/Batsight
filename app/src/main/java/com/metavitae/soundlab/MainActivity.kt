@@ -14,6 +14,17 @@ class MainActivity : Activity() {
     private var pendingMic: (() -> Unit)? = null
     @Volatile private var busy = false
 
+    /** What the phone's Back button does on the current screen (null = leave the app, as on the menu).
+     *  Founder 2026-10-15: after "Phone sound facts" on the 8T he could not get back anywhere. */
+    var backHook: (() -> Unit)? = null
+
+    @Deprecated("still the simplest way on SDK 34")
+    override fun onBackPressed() {
+        if (busy) return                     // a test is running: finish it first
+        val h = backHook
+        if (h != null) h() else @Suppress("DEPRECATION") super.onBackPressed()
+    }
+
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -117,6 +128,7 @@ class MainActivity : Activity() {
     // ------------------------------------------------------------------ menu
 
     private fun showMenu() {
+        backHook = null
         scrollPage {
             text("Sound Lab", 28f, bold = true)
             text("Results are saved in Download/SoundLab (open Files by Google). Most tests are started by CC from the computer.", 14f, color = Color.LTGRAY)
@@ -136,9 +148,13 @@ class MainActivity : Activity() {
         busy = true
         var status: TextView? = null
         var out: TextView? = null
+        var mic: TextView? = null
+        var back: android.widget.Button? = null
+        backHook = { showMenu() }
         scrollPage {
+            back = button("‹ Back to menu") { if (!busy) showMenu() }.also { it.visibility = android.view.View.GONE }
             text("Phone sound facts", 24f, bold = true)
-            text("● Mic is on", 16f, bold = true, color = Color.RED)
+            mic = text("● Mic is on", 16f, bold = true, color = Color.RED)
             text("Lay the phone face up on a table and don't touch it. Nothing is played.", 15f)
             status = text("Starting...", 16f, color = Color.rgb(255, 200, 0))
             out = text("", 12f)
@@ -148,7 +164,7 @@ class MainActivity : Activity() {
                          catch (e: Throwable) { "FAILED: ${e.javaClass.simpleName} ${e.message}" }
             val path = Results.saveText(this, "$id.txt", report)
             busy = false
-            runOnUiThread { status?.text = "Done. Saved: $path"; out?.text = report }
+            runOnUiThread { status?.text = "Done. Saved: $path"; out?.text = report; mic?.text = "Mic is off"; mic?.setTextColor(Color.LTGRAY); back?.visibility = android.view.View.VISIBLE }
         }.start()
     }
 
@@ -157,7 +173,10 @@ class MainActivity : Activity() {
         busy = true
         var status: TextView? = null
         var mic: TextView? = null
+        var back: android.widget.Button? = null
+        backHook = { showMenu() }
         scrollPage {
+            back = button("‹ Back to menu") { if (!busy) showMenu() }.also { it.visibility = android.view.View.GONE }
             text("Live rhythm", 24f, bold = true)
             mic = text("● Mic is on", 16f, bold = true, color = Color.RED)
             text("Run: ${p.id} (${p.role})", 13f, color = Color.LTGRAY)
@@ -171,7 +190,7 @@ class MainActivity : Activity() {
                           msg
                       }
             busy = false
-            runOnUiThread { mic?.text = "Mic is off"; mic?.setTextColor(Color.LTGRAY); status?.text = "Done.\n$res" }
+            runOnUiThread { mic?.text = "Mic is off"; mic?.setTextColor(Color.LTGRAY); status?.text = "Done.\n$res"; back?.visibility = android.view.View.VISIBLE }
         }.start()
     }
 
@@ -180,7 +199,10 @@ class MainActivity : Activity() {
         busy = true
         var status: TextView? = null
         var mic: TextView? = null
+        var back: android.widget.Button? = null
+        backHook = { showMenu() }
         scrollPage {
+            back = button("‹ Back to menu") { if (!busy) showMenu() }.also { it.visibility = android.view.View.GONE }
             text("Play and record", 24f, bold = true)
             mic = text("● Mic is on", 16f, bold = true, color = Color.RED)
             text("Run: ${p.id}", 13f, color = Color.LTGRAY)
@@ -197,7 +219,7 @@ class MainActivity : Activity() {
                           msg
                       }
             busy = false
-            runOnUiThread { mic?.text = "Mic is off"; mic?.setTextColor(Color.LTGRAY); status?.text = "Done.\n$res" }
+            runOnUiThread { mic?.text = "Mic is off"; mic?.setTextColor(Color.LTGRAY); status?.text = "Done.\n$res"; back?.visibility = android.view.View.VISIBLE }
         }.start()
     }
 }
