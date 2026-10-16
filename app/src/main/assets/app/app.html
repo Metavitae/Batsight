@@ -107,6 +107,13 @@ ol li::before{content:counter(s);width:28px;height:28px;border-radius:50%;border
 @keyframes sw{0%,100%{transform:rotate(-40deg)}50%{transform:rotate(40deg)}}
 @media (prefers-reduced-motion:reduce){.ring,.sweep{animation:none}.ring{opacity:.35}.glow{transition:none}}
 .foot a{color:var(--muted);text-decoration:underline}
+/* APP: the screen follows Android's auto-rotate in all four directions (founder 2026-10-15: hold the phone the way the
+   sound works best; the map stays the same, only the view turns). Sideways, the picture shrinks to fit the height. */
+@media (orientation:landscape){
+ main{max-width:760px}
+ #view,.view{width:auto;height:calc(100dvh - 150px);max-height:calc(100dvh - 150px);aspect-ratio:3/4;margin:0 auto}
+ #walkview{width:100%;aspect-ratio:auto}
+}
 /* ---- Join (Chat: Shared scanning screens) ---- */
 .step{background:var(--panel);border:1px solid #1E2F4F;border-radius:16px;padding:14px 16px}
 .step h3{margin:0 0 4px;font-size:15px;font-weight:600}
