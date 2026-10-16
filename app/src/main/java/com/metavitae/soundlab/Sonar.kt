@@ -26,6 +26,10 @@ object Sonar {
     val phoneName get() = if (is8T) "8T" else if (Build.MODEL.contains("2312FPCA6G")) "POCO" else Build.MODEL
     /** Wide pitch range per phone (lab WIDE / SHORT): the POCO is deaf above ~16 kHz. */
     val shortTop get() = if (is8T) 20000 else 15000
+    /** Nearest distance each phone can be trusted at (lab, 2026-10-12: 8T found a book from ~25 cm,
+     *  the POCO is blind closer than ~40-60 cm). First live try (8T flat on a table) showed "echoes" at
+     *  0.15-0.25 m that are the phone ringing itself, so nothing closer than this counts. */
+    val minM get() = if (is8T) 0.25 else 0.45
 
     fun warp(ctx: Context): DoubleArray {
         val b = ctx.assets.open("sonar/warp.wav").use { it.readBytes() }
@@ -126,8 +130,9 @@ object Sonar {
             val (se, sfl) = Dsp.floor(sp, seq.shortRef)
             val sNoise6 = Dsp.noiseOfMean(sp).map { 6 * it }.toDoubleArray()
             val blind = Dsp.blindEndM(se, sNoise6, RATE)
-            val near = Dsp.peaks(se, sfl, RATE, 0.15, NEAR_MAX_M)
-            val far = Dsp.peaks(we2, wfl, RATE, NEAR_MAX_M, MAX_M)
+            val from = max(minM, blind)                       // inside the blind zone nothing can be judged
+            val near = if (from < NEAR_MAX_M) Dsp.peaks(se, sfl, RATE, from, NEAR_MAX_M) else emptyList()
+            val far = Dsp.peaks(we2, wfl, RATE, max(NEAR_MAX_M, from), MAX_M)
             val cands = ArrayList<Candidate>()
             near.forEach { cands.add(Candidate(it.m, it.strength, true)) }
             for (p in far) {
