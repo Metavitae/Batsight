@@ -98,6 +98,28 @@ def report(out):
                     ax.set_theta_zero_location("N"); ax.set_theta_direction(-1); ax.set_rmax(3.2); ax.set_title(lv.stem, fontsize=9)
                     pic = out / f"{lv.stem}.png"; fig.savefig(pic, bbox_inches="tight"); plt.close(fig)
                     L.append(f"Picture: {pic.name} (each dot = nearest echo at the heading the phone pointed)")
+        # ---- TEST button steps (app_test_*.json): which recording each step made, matched by start time
+        tests = sorted(d.glob("app_test_*.json"), key=lambda p: (_json(p) or {}).get("tap_ms") or 0)
+        if tests:
+            import datetime as dt
+            runs = {}
+            for r in list(d.glob("app_watch_*.csv")) + list(d.glob("app_listen_*_live.csv")):
+                stamp = r.stem.replace("_live", "").split("_")[-1]
+                try:
+                    runs[r] = dt.datetime.strptime(f"{dt.date.today().year}{stamp}", "%Y%m%d-%H%M%S").timestamp()
+                except ValueError:
+                    pass
+            L += ["", "### TEST steps", "| code | step | result | ran (s) | recording |", "|---|---|---|---|---|"]
+            for t in tests:
+                j = _json(t) or {}
+                rec, ran = "", ""
+                if j.get("start_ms"):
+                    s0 = j["start_ms"] / 1000
+                    near = min(runs, key=lambda r: abs(runs[r] - s0), default=None)
+                    if near is not None and abs(runs[near] - s0) < 5:
+                        rec = near.name
+                    ran = f"{(j['end_ms'] - (j.get('go_ms') or j['start_ms'])) / 1000:.0f}"
+                L.append(f"| {j.get('code')} | {j.get('title')} | {j.get('result')} | {ran} | {rec} |")
         # ---- Hive handshakes
         hs = sorted(d.glob("app_handshake_*_result_*.json"))
         if hs:

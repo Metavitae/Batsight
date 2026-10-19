@@ -106,6 +106,9 @@ ol li::before{content:counter(s);width:28px;height:28px;border-radius:50%;border
 .sweep{animation:sw 3.6s ease-in-out infinite;transform-origin:150px 168px}
 @keyframes sw{0%,100%{transform:rotate(-40deg)}50%{transform:rotate(40deg)}}
 @media (prefers-reduced-motion:reduce){.ring,.sweep{animation:none}.ring{opacity:.35}.glow{transition:none}}
+#tp{position:fixed;left:12px;right:12px;bottom:12px;margin:0 auto;z-index:4;max-height:55vh;overflow:auto;box-shadow:0 -8px 30px #050A14}
+#tp .txt{margin:0;font-size:15px;line-height:1.5;color:var(--ink);text-wrap:pretty}
+.tcode{font-size:12.5px;letter-spacing:.08em;color:var(--line)}
 .foot a{color:var(--muted);text-decoration:underline}
 /* APP: the screen follows Android's auto-rotate in all four directions (founder 2026-10-15: hold the phone the way the
    sound works best; the map stays the same, only the view turns). Sideways, the picture shrinks to fit the height. */
@@ -197,8 +200,10 @@ ol li::before{content:counter(s);width:28px;height:28px;border-radius:50%;border
 <p class="fine">"Still" never means the room is empty or safe; this is a watching aid, not a security device. For now it shows how far, not which way (a ring, not a point). Telling who is known comes after its own test. The arrow shows only whether a mover comes toward or goes away from the phone, and about how fast, only while it moves; left and right come once direction is proven. Speeds are still being measured.</p>
 </section>
 
+<div class="row"><button class="b mono" id="testBtn" style="flex:1">TEST</button></div>
 <p class="fine foot">Quiet, high chirps: keep pets and sleeping people out of the room. <a href="#" id="lab">Lab</a></p>
 </main>
+<div id="tp" class="card" hidden></div>
 <div id="ov" hidden><div class="card" id="card"></div></div>
 
 <script src="app.js"></script>
