@@ -256,7 +256,25 @@ function drawMarks(){
 var out="", n=marks.length;
 marks.forEach(function(p,i){ var age=n-1-i, op=Math.max(0.12,1-age*0.22), last=(i===n-1);
 out+=band(-90,90,p.d-0.2,p.d+0.2,"#F2B84B",((p.solid?0.3:0.14)*op).toFixed(2),"#F2B84B",last); });
-markG.innerHTML=out;
+var m=moveOf(marks); if(m)out+=wArrow(WOX,WOY-marks[n-1].d*WS,0,m.vr<0?1:-1,m.sp,"#F2B84B");
+markG.innerHTML=out; $("w-move").textContent=m?moveLine("Mover",m):"";
+}
+/* speed toward/away from the last few timed distances (Chat, Oct 19: speed + arrow; Faro: toward/away only) */
+var MOVE_MIN=0.12;
+function moveOf(pts){
+if(pts.length<3)return null;
+var k=Math.min(4,pts.length), a=pts[pts.length-k], b=pts[pts.length-1], dt=(b.t-a.t)/1000;
+if(!(dt>0.3))return null;
+var vr=(b.d-a.d)/dt, sp=Math.abs(vr);
+return sp>=MOVE_MIN&&sp<5?{vr:vr,sp:sp}:null;
+}
+function speedWord(v){return v<0.35?"slow":v<1.3?"walking pace":"fast";}
+function moveLine(who,m){return who+": "+speedWord(m.sp)+", about "+m.sp.toFixed(1)+" m/s "+(m.vr<0?"toward":"away from")+" the phone.";}
+function wArrow(x,y,ux,uy,sp,col){
+var L=Math.min(sp*1.6*WS,70); if(L<6)return "";
+var x1=x+ux*L, y1=y+uy*L, hx=x1-ux*8, hy=y1-uy*8;
+return '<line x1="'+x+'" y1="'+y.toFixed(1)+'" x2="'+hx.toFixed(1)+'" y2="'+hy.toFixed(1)+'" stroke="'+col+'" stroke-width="2.2" stroke-linecap="round" opacity="0.95"/>'+
+'<polygon points="'+x1.toFixed(1)+','+y1.toFixed(1)+' '+(hx-uy*4.5).toFixed(1)+','+(hy+ux*4.5).toFixed(1)+' '+(hx+uy*4.5).toFixed(1)+','+(hy-ux*4.5).toFixed(1)+'" fill="'+col+'" opacity="0.95"/>';
 }
 function pulse(){ if(running!=="watch")return;
 var c=wel("circle",{cx:WOX,cy:WOY,r:6,"stroke-width":1.5,opacity:.5},pingG);
@@ -270,9 +288,9 @@ if(running!=="watch")return;
 if(ev.state==="turn"){ $("w-sub").textContent=ev.text||"Taking turns with the other phone."; return; }
 if(inHive()&&meTag){ hw[meTag]={state:ev.state,d:ev.d,at:Date.now()}; if(ev.state==="MOVING"||ev.state==="CHANGED"){ hiveDraw(); return; } }
 if(ev.state==="learning"){wStatus("Learning the room","var(--muted)","Keep still for a few seconds.");return;}
-if(ev.state==="MOVING"&&ev.d!=null){changed=false;$("w-ask2").hidden=true;marks.push({d:ev.d});if(marks.length>5)marks.shift();drawMarks();
+if(ev.state==="MOVING"&&ev.d!=null){changed=false;$("w-ask2").hidden=true;marks.push({d:ev.d,t:Date.now()});if(marks.length>5)marks.shift();drawMarks();
 wStatus("Something moved","var(--warn)","About "+ev.d.toFixed(1)+" m away. This phone can't tell which way yet.");since=Date.now();return;}
-if(ev.state==="CHANGED"&&ev.d!=null){if(!changed){changed=true;marks=[{d:ev.d,solid:true}];drawMarks();}
+if(ev.state==="CHANGED"&&ev.d!=null){if(!changed){changed=true;marks=[{d:ev.d,t:Date.now(),solid:true}];drawMarks();}
 wStatus("Something changed","var(--warn)","Something stayed different, about "+ev.d.toFixed(1)+" m away. Keep it as the new normal?");$("w-ask2").hidden=false;return;}
 if(ev.state==="ADOPTED"){changed=false;marks=[];drawMarks();$("w-ask2").hidden=true;wStatus("Still","var(--ok)","The change stayed, so it is now the usual room.");since=Date.now();return;}
 if(ev.state==="still"&&!changed){ if(marks.length){marks.shift();drawMarks();} if(!marks.length&&$("w-big").textContent!=="Still"){wStatus("Still","var(--ok)","Nothing has moved for 0 s.");since=Date.now();} }
@@ -306,8 +324,12 @@ if(mv.length===2){
  var A=mv[0],B=mv[1], xa=(pX(A.t)-WOX)/WS, xb=(pX(B.t)-WOX)/WS;
  var x=(A.d*A.d-B.d*B.d+xb*xb-xa*xa)/(2*(xb-xa)), yy=A.d*A.d-(x-xa)*(x-xa), approx=yy<0, y=Math.sqrt(Math.max(0,yy));
  ring(A.t,A.d,false); ring(B.t,B.d,false);
- trail.push([WOX+x*WS,WOY+12-y*WS]); if(trail.length>5)trail.shift();
+ trail.push([WOX+x*WS,WOY+12-y*WS,(A.d+B.d)/2,now]); if(trail.length>5)trail.shift();
+ for(var i=1;i<trail.length;i++)jel("line",{x1:trail[i-1][0],y1:trail[i-1][1],x2:trail[i][0],y2:trail[i][1],stroke:"#F2B84B","stroke-width":2,"stroke-opacity":(0.2+0.6*i/trail.length).toFixed(2),"stroke-linecap":"round"},g);
  trail.forEach(function(p,i){ jel("circle",{cx:p[0],cy:p[1],r:i===trail.length-1?7:3.5,fill:"#F2B84B","fill-opacity":(0.25+0.75*(i+1)/trail.length).toFixed(2)},g); });
+ var hm=moveOf(trail.map(function(q){return {d:q[2],t:q[3]};})), tp=trail[trail.length-1];
+ if(hm){var dx=tp[0]-WOX, dy=tp[1]-(WOY+12), L=Math.sqrt(dx*dx+dy*dy)||1, sg=hm.vr<0?-1:1; g.insertAdjacentHTML("beforeend",wArrow(tp[0],tp[1],dx/L*sg,dy/L*sg,hm.sp,"#F2B84B"));}
+ $("w-move").textContent=hm?moveLine("Mover",hm):"";
  wStatus("Something moved","var(--warn)","About "+A.d.toFixed(1)+" m from "+A.t+" and "+B.d.toFixed(1)+" m from "+B.t+"."+(approx?" The two distances don't quite meet, so the spot is approximate.":""));
 } else if(mv.length===1){
  ring(mv[0].t,mv[0].d,true);

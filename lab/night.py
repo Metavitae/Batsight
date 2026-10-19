@@ -13,7 +13,7 @@ from pathlib import Path
 
 import numpy as np
 
-PHONES = {"8T": "192.168.1.74:5555", "POCO": "192.168.1.75:5555"}
+PHONES = {"8T": "192.168.1.74:5555", "POCO": "192.168.1.73:5555"}
 DL = "/sdcard/Download/SoundLab"
 FIELD = "/sdcard/Android/data/com.metavitae.soundlab/files/field"
 

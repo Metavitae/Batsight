@@ -189,11 +189,12 @@ ol li::before{content:counter(s);width:28px;height:28px;border-radius:50%;border
 <div class="view">
 <svg id="wmap" viewBox="0 0 300 400" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Room seen from above, phone at the bottom, with where something moved"></svg>
 <div class="cap"><div class="big" id="w-big" style="color:var(--muted)">Not watching</div><div class="sub" id="w-sub">Lay the phone still, then tap Start.</div>
+<div class="sub" id="w-move" style="margin-top:4px"></div>
 <div class="row" id="w-ask2" style="justify-content:center;margin-top:10px" hidden><button class="b p" id="w-yes">Keep as normal</button><button class="b" id="w-no">No, keep watching</button></div></div>
 </div>
 <div class="row"><button class="b p" id="hgo">Start</button></div>
 <div class="legend"><span style="--c:var(--warn)">Where it moved</span><span style="--c:var(--ok)">Still</span></div>
-<p class="fine">"Still" never means the room is empty or safe; this is a watching aid, not a security device. For now it shows how far, not which way (a ring, not a point). Telling who is known comes after its own test.</p>
+<p class="fine">"Still" never means the room is empty or safe; this is a watching aid, not a security device. For now it shows how far, not which way (a ring, not a point). Telling who is known comes after its own test. The arrow shows only whether a mover comes toward or goes away from the phone, and about how fast, only while it moves; left and right come once direction is proven. Speeds are still being measured.</p>
 </section>
 
 <p class="fine foot">Quiet, high chirps: keep pets and sleeping people out of the room. <a href="#" id="lab">Lab</a></p>
