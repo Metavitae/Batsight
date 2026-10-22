@@ -112,7 +112,7 @@ object AppScreen {
                                 "msg" -> when (j.optString("t")) {
                                     "hs" -> { hsPeerTag = j.optString("from"); val me = hive?.myTag() ?: "B"; Thread { Thread.sleep(j.optLong("in", 600)); handshake(act, me) }.start()
                                               js(act, "window.batHive && batHive({type:'hsgo'})") }
-                                    "w", "watch" -> js(act, "window.batHive && batHive(" + j.put("type", "msg").toString() + ")")
+                                    "w", "watch", "test" -> js(act, "window.batHive && batHive(" + j.put("type", "msg").toString() + ")")
                                     "hsres" -> { if (j.optBoolean("ok")) { hsPeer = j.optDouble("diff"); hsPeerTag = j.optString("from"); hsFinish(act) } else js(act, "window.batHive && batHive({type:'hserr'})") }
                                 }
                             }

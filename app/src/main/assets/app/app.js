@@ -68,7 +68,7 @@ if(t==="F")camOn(); else camOff();
 ["J","F","L","W","H"].forEach(function(k){$("t"+k).addEventListener("click",function(){setTab(k);});});
 $("help").addEventListener("click",function(){ if(tab==="J"){return;} openOv(tab);});
 $("lab").addEventListener("click",function(e){e.preventDefault();stopRunning();camOff();Bat.lab();});
-window.batBack=function(){ if(!$("ov").hidden){closeOv();return true;} if(tStep){tEnd("stopped");return true;} if(!$("tp").hidden){tClose();return true;} if(running){stopRunning();return true;} if(tab!=="F"){setTab("F");return true;} return false; };
+window.batBack=function(){ if(!$("ov").hidden){closeOv();return true;} if(tStep){tEnd("stopped");return true;} if(!$("ts").hidden){$("ts").hidden=true;return true;} if(running){stopRunning();return true;} if(tab!=="F"){setTab("F");return true;} return false; };
 function resetButtons(){ $("lgo").textContent="Start"; $("wgo").textContent="Start"; $("hgo").textContent="Start"; }
 
 /* ================= Screen 2: Focus ================= */
@@ -379,70 +379,147 @@ $("j-go").hidden=false;$("j-go").textContent="Start again"; });
 jdraw(false);
 
 
-/* ================= TEST plan (founder Oct 19: "a set of tests like LC does") =================
-   One TEST button runs this phone's list in order. Each step says what to do, waits for the tap, counts down so the
-   founder can get in place, runs the real engine for a fixed time, buzzes, and saves app_test_<phone>_<code>_<time>.json
-   (start, go and end times) so CC can find that stretch in the Watch / Listen recordings. Where it got to is kept.
-   Buzzes: 1 = starting (keep still while Watch learns), 2 = go, 3 = done. Only one phone pings at a time. */
+/* ================= TEST (founder Oct 22: "make it like LC's"; Chat's drawing TestScreens.html, Oct 22) =================
+   Two parts, one tap each: Home -> set-up card ("Ready") -> each step runs by itself -> Done. No read-aloud (founder).
+   A step: get-ready countdown (Pause freezes it), buzz 1 + learning for Watch steps, buzz 2 = go, the real engine runs
+   for a fixed time, buzz 3 = done, 5 s, next step. Pause while recording = pause after this step (a recording is never
+   cut). Each step saves app_test_<phone>_<code>_<time>.json (start, go and end times) so CC finds that stretch in the
+   Watch / Listen recordings. Where each part got to is kept. E4 (in your hand) sits in Part B: Part A never needs him
+   to hold the phone. If the phones are joined, this phone tells the other one to stay quiet. */
 var TPLAN=[
-{c:"T0",k:"note",h:"Before you start",t:"Only THIS phone pings during the tests: close Batsight on the other phone. Put tape marks on the floor in a straight line from where this phone will lie: 1, 1.5, 2, 2.5 and 3 m. For S4 also mark two spots 2 m in front of the phone, 1.5 m to its left and 1.5 m to its right. Keep pets and sleeping people out of the room."},
-{c:"E1",k:"listen",sec:20,wait:8,h:"Self-echo: flat",t:"Lay the phone flat, screen up, nothing within 1 m of it (move cups, laptop, books away). Take the case off if it has one. Tap Start, step back 2 m and stand still until three buzzes."},
-{c:"E2",k:"listen",sec:20,wait:8,h:"Self-echo: mug at 40 cm",t:"Same as E1, but put a mug 40 cm in front of the phone's top edge. This checks that removing the phone's own sound never hides a real thing."},
-{c:"E3",k:"listen",sec:20,wait:10,h:"Self-echo: upright",t:"Stand the phone upright on a stand or tripod, screen toward you, nothing within 1 m in front of its back. No stand? Tap Skip. Tap Start, step back 2 m, stand still."},
-{c:"E4",k:"listen",sec:20,wait:10,h:"Self-echo: in your hand",t:"Tap Start, then hold the phone in your hand, arm straight, aimed at open space (nothing within 1 m ahead). Keep still until three buzzes."},
-{c:"E5",k:"listen",sec:20,wait:8,h:"Self-echo: with the case",t:"Put the case back on and lay the phone flat like E1. No case? Tap Skip."},
-{c:"S1",k:"watch",sec:40,wait:10,h:"Speed: slow",t:"Lay the phone flat at the start of the tape line (the 8T with its long side facing the line). Tap Start and go stand on the 3 m mark. One buzz: keep still while it learns. Two buzzes: walk SLOWLY (about half a step a second) to the 1 m mark, wait 3 s, walk slowly back to 3 m, wait 3 s. Do it twice. Three buzzes: done."},
-{c:"S2",k:"watch",sec:30,wait:10,h:"Speed: normal",t:"Same as S1 at your normal walking pace, 3 m to 1 m and back, wait 3 s at each end. Do it three times."},
-{c:"S3",k:"watch",sec:60,wait:10,h:"Speed: stand still",t:"Tap Start and go stand on the 2 m mark. After two buzzes keep standing still, just breathing, for one minute, until three buzzes."},
-{c:"S4",k:"watch",sec:40,wait:10,h:"Speed: sideways",t:"Tap Start and go to the left mark (2 m in front, 1.5 m to the left). After two buzzes walk across to the right mark at normal pace, wait 3 s, walk back, wait 3 s. Twice."},
-{c:"H1",k:"listen",sec:20,wait:10,h:"Holding: flat",t:"Tap Start, then stand 1 m from a flat wall or closed door. Hold the phone flat, screen up, top edge pointing at the wall, arm straight. Keep still."},
-{c:"H2",k:"listen",sec:20,wait:10,h:"Holding: like a camera",t:"Same spot. Hold the phone upright like taking a photo, back of the phone facing the wall."},
-{c:"H3",k:"listen",sec:20,wait:10,h:"Holding: like a torch",t:"Same spot. Hold it like a torch: top edge pointing at the wall, screen facing to your left."},
-{c:"H4",k:"listen",sec:20,wait:10,h:"Holding: hand over the bottom",t:"Same as H2 (like a camera), but wrap your fingers over the bottom edge of the phone. This checks what a covered mic does."},
-{c:"H5",k:"listen",sec:25,wait:10,h:"Holding: slow turn",t:"Stand in the middle of the room, hold it like a camera, and after two buzzes turn slowly from your left to your right and back, over about 20 s."},
-{c:"W1",k:"watch",sec:180,wait:20,h:"Watch left alone",t:"Lay the phone where it will watch (a shelf or table, the 8T with its long side to the room). Tap Start, leave the room within 20 s and close the door. Come back after 4 minutes (set a timer). Nobody in the room meanwhile."},
-{c:"W2",k:"watch",sec:120,wait:20,h:"Watch: someone comes in",t:"Same place. Tap Start and leave within 20 s. After about one minute walk back in slowly, stand in the middle for 10 s, then leave again. Come back after 3 minutes."}
+{c:"E1",p:"A",k:"listen",sec:20,wait:10,t:"Lay the phone flat, screen up, with the case off, then step back 2 m."},
+{c:"E2",p:"A",k:"listen",sec:20,wait:15,t:"Put the mug 40 cm in front of the phone's top edge, then step back 2 m."},
+{c:"E3",p:"A",k:"listen",sec:20,wait:20,t:"Take the mug away, stand the phone upright facing you, then step back 2 m. No stand? Tap Skip step."},
+{c:"E5",p:"A",k:"listen",sec:20,wait:20,t:"Put the case back on, lay the phone flat again, then step back 2 m. No case? Tap Skip step."},
+{c:"S1",p:"B",k:"watch",sec:40,wait:20,t:"Lay the phone flat at the start of the tape, long side facing the line, and stand on the 3 m mark. At two buzzes walk slowly to 1 m and back, twice."},
+{c:"S2",p:"B",k:"watch",sec:30,wait:10,t:"Back on the 3 m mark. At two buzzes walk at your normal pace to 1 m and back, three times."},
+{c:"S3",p:"B",k:"watch",sec:60,wait:10,t:"Stand on the 2 m mark and stay still, just breathing, until three buzzes."},
+{c:"S4",p:"B",k:"watch",sec:40,wait:15,t:"Stand on the left mark. At two buzzes walk across to the right mark and back, twice."},
+{c:"E4",p:"B",k:"listen",sec:20,wait:15,t:"Pick the phone up, arm straight, point it at open space and keep still."},
+{c:"H1",p:"B",k:"listen",sec:20,wait:15,t:"Stand 1 m from the wall, hold the phone flat with its top edge pointing at the wall, and keep still."},
+{c:"H2",p:"B",k:"listen",sec:20,wait:10,t:"Same spot: hold the phone upright like taking a photo, back of the phone toward the wall."},
+{c:"H3",p:"B",k:"listen",sec:20,wait:10,t:"Same spot: hold it like a torch, top edge at the wall, screen facing your left."},
+{c:"H4",p:"B",k:"listen",sec:20,wait:10,t:"Same spot, like a photo, but wrap your fingers over the bottom edge."},
+{c:"H5",p:"B",k:"listen",sec:25,wait:15,t:"Stand in the middle of the room and hold it like a photo. At two buzzes turn slowly from left to right and back."},
+{c:"W1",p:"B",k:"watch",sec:180,wait:25,t:"Lay the phone on a shelf facing the room. Set a timer, leave and close the door. At 5 minutes walk in slowly, stand in the middle 10 s, leave again. Come back at 7 minutes."},
+{c:"W2",p:"B",k:"watch",sec:120,wait:15,t:"Still out of the room. At 5 minutes walk in slowly, stand in the middle 10 s, then leave. Back at 7 minutes."}
 ];
+var TPARTS={A:{name:"Part A",title:"Phone alone",sub:"The phone lies still. You only set it up.",
+ setup:["Close Batsight on the other phone.","Clear the table: nothing within 1 m of the phone.","Take the case off. Keep the case, a mug and a stand close by."]},
+B:{name:"Part B",title:"You move",sub:"You walk, or hold the phone.",
+ setup:["Tape marks on the floor in a line from the phone: 1, 1.5, 2, 2.5 and 3 m.","Two more marks 2 m in front of the phone: 1.5 m to its left and 1.5 m to its right.","A flat wall or closed door you can stand 1 m from."]}};
 function tget(k,d){try{var v=localStorage.getItem(k);return v==null?d:JSON.parse(v);}catch(e){return d;}}
 function tset(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
-var tStep=null, tTimer=null;
-function tI(){return Math.min(tget("bat.test.i",0),TPLAN.length);}
-function tBtn(){var i=tI(); $("testBtn").textContent=tStep?"TEST · RUNNING "+tStep.c:i>=TPLAN.length?"TESTS DONE · TAP TO START OVER":"TEST · START AT "+TPLAN[i].c;}
+function tList(p){return TPLAN.filter(function(s){return s.p===p;});}
+function tDone(p){return Math.min(tget("bat.test."+p,0),tList(p).length);}
+function tRes(){return tget("bat.test.res",{});}
+var tStep=null,tTimer=null,tPart=null,tPause=false,otherTesting=false;
 function buzzN(n){for(var k=0;k<n;k++)setTimeout(function(){Bat.buzz(250);},k*450);}
-function tShow(html){$("tp").innerHTML=html;$("tp").hidden=false;}
-function tCard(){var i=tI();
-if(i>=TPLAN.length){tShow('<h2>All tests on this phone done</h2><p class="txt">CC pulls the files from the phone. Next: the other phone, or start over.</p><div class="row end"><button class="b" id="tx">Close</button><button class="b p" id="tagain">Start over</button></div>');
-$("tagain").onclick=function(){tset("bat.test.i",0);tCard();tBtn();};$("tx").onclick=tClose;return;}
-var s=TPLAN[i];
-tShow('<div class="tcode">'+s.c+' · '+(i+1)+' of '+TPLAN.length+'</div><h2>'+s.h+'</h2><p class="txt">'+s.t+'</p><div class="row end"><button class="b" id="tx">Close</button><span class="row"><button class="b" id="tskip">Skip</button><button class="b p" id="tgo">'+(s.k==="note"?"Done":"Start "+s.c)+'</button></span></div>');
-$("tx").onclick=tClose; $("tskip").onclick=function(){tSave(s,{result:"skipped"});tNext();};
-$("tgo").onclick=function(){ if(s.k==="note"){tNext();return;} tRun(s); };
+function tEl(t,c,h){var n=document.createElement(t);if(c)n.className=c;if(h!=null)n.innerHTML=h;return n;}
+function tScreen(){var ts=$("ts");ts.innerHTML="";ts.hidden=false;
+ ts.appendChild(tEl("header",null,'<h1>TEST</h1><div class="mic'+(running?" on":"")+'"><i></i>'+(running?"Mic is on":"Mic is off")+'</div>'));
+ var st=tEl("div","tstage");ts.appendChild(st);return st;}
+function tHome(msg){ clearTimeout(tTimer); tPart=null; var st=tScreen();
+ st.appendChild(tEl("div","ttag","This phone"));
+ st.appendChild(tEl("h2",null,"Two parts. One button each."));
+ st.appendChild(tEl("p",null,"Tap a part. The phone leads you through every step, one sentence at a time."));
+ if(msg)st.appendChild(tEl("p","twarn",msg));
+ ["A","B"].forEach(function(p){var n=tList(p).length,d=tDone(p);
+  var b=tEl("button","tpart"+(d>=n?" done":""),'<div><b>'+TPARTS[p].name+': '+TPARTS[p].title+'</b><span>'+TPARTS[p].sub+'</span></div><em>'+(d>=n?"Done":d+" of "+n)+'</em>');
+  b.onclick=function(){tSetup(p);};st.appendChild(b);});
+ st.appendChild(tEl("div","tgrow"));
+ var x=tEl("button","tghost","Close");x.onclick=function(){$("ts").hidden=true;};st.appendChild(x);
 }
-function tClose(){ if(tStep)return; $("tp").hidden=true; }
-function tNext(){tset("bat.test.i",tI()+1);tBtn();tCard();}
-function tSave(s,o){var r={code:s.c,title:s.h,phone:PH,engine:s.k,planned_s:s.sec||0};for(var k in o)r[k]=o[k];
-Bat.save("app_test_"+PH+"_"+s.c+"_"+new Date().toISOString().replace(/[-:]/g,"").slice(4,15)+".json",JSON.stringify(r));}
-function tStatus(big,sub,stopTxt){tShow('<div class="tcode">'+tStep.c+'</div><h2>'+big+'</h2><p class="txt">'+sub+'</p><div class="row end"><span></span><button class="b" id="tstop">'+(stopTxt||"Stop this step")+'</button></div>');
-$("tstop").onclick=function(){tEnd("stopped");};}
-function tRun(s){ var n=s.wait; tStep={c:s.c,s:s,tap:Date.now()}; tBtn();
-(function count(){ if(!tStep)return; if(n>0){tStatus("Starting in "+n+" s","Get in place now.");n--;tTimer=setTimeout(count,1000);return;}
- tStep.start=Date.now();
- if(s.k==="watch"){ setTab("H"); startWatch(false); buzzN(1); tStep.learning=true; tStatus("Learning the room","Keep still until two buzzes."); }
- else { setTab("L"); if(running!=="listen")$("lgo").click(); tGo(); }
-})();
+function tWhyNot(){
+ if(otherTesting)return "The other phone is running its tests. Wait until it is done.";
+ if(running==="focus")return "The Focus camera is still listening. Wait for it to finish, then try again.";
+ if(running==="hs")return "The phones are still joining. Wait for that to finish, then try again.";
+ return null;}
+function tSetup(p){ var why=tWhyNot(); if(why){tHome(why);return;}
+ var list=tList(p),n=list.length,d=tDone(p); if(d>=n){tset("bat.test."+p,0);d=0;}
+ var st=tScreen();
+ st.appendChild(tEl("div","ttag",TPARTS[p].name+" of 2"));
+ st.appendChild(tEl("h2",null,TPARTS[p].title));
+ var c=tEl("div","tcard");c.appendChild(tEl("b",null,"Before you start"));var u=tEl("ul");
+ TPARTS[p].setup.forEach(function(x){u.appendChild(tEl("li",null,x));});c.appendChild(u);st.appendChild(c);
+ var mins=Math.ceil(list.slice(d).reduce(function(a,s){return a+s.sec+s.wait+(s.k==="watch"?15:0)+5;},0)/60);
+ st.appendChild(tEl("p",null,(n-d)+" steps, about "+mins+" minutes. The phone buzzes 1 to start, 2 to go, 3 when a step is done."));
+ st.appendChild(tEl("div","tgrow"));
+ var r=tEl("button","tbig ok",d>0?"Ready. Continue at "+(d+1):"Ready");r.onclick=function(){tPart=p;tPause=false;tTell(true);tRun();};
+ var bk=tEl("button","tghost","Back");bk.onclick=function(){tHome();};
+ st.appendChild(r);st.appendChild(bk);
 }
-function tGo(){ if(!tStep||tStep.go)return; var s=tStep.s, left=s.sec; tStep.go=Date.now(); tStep.learning=false; buzzN(2);
-(function tick(){ if(!tStep)return; if(left<=0){tEnd("done");return;} tStatus(s.h,left+" s left. "+(s.k==="watch"?"Go.":"Keep still.")); left--; tTimer=setTimeout(tick,1000); })();
+function tTell(on){ if(inHive())Bat.hiveSend(JSON.stringify({t:"test",on:on})); }
+function tSave(s,o){var r={code:s.c,part:s.p,text:s.t,phone:PH,engine:s.k,planned_s:s.sec};for(var k in o)r[k]=o[k];
+ var res=tRes();res[s.c]=o.result;tset("bat.test.res",res);
+ Bat.save("app_test_"+PH+"_"+s.c+"_"+new Date().toISOString().replace(/[-:]/g,"").slice(4,15)+".json",JSON.stringify(r));}
+function tRun(){ clearTimeout(tTimer); var list=tList(tPart),i=tDone(tPart);
+ if(i>=list.length){tTell(false);tFin();return;}
+ var s=list[i]; tStep={s:s,i:i,phase:"get",left:s.wait,total:s.wait,tap:Date.now()}; tDraw();
+ (function count(){ if(!tStep)return;
+  if(tPause){tTimer=setTimeout(count,1000);return;}
+  if(tStep.left>0){tDraw();tStep.left--;tTimer=setTimeout(count,1000);return;}
+  tStep.start=Date.now();
+  if(s.k==="watch"){ setTab("H"); startWatch(false); buzzN(1); tStep.phase="learn"; tStep.left=0; tDraw(); }
+  else { setTab("L"); if(running!=="listen")$("lgo").click(); tGo(); }
+ })();
+}
+function tGo(){ if(!tStep||tStep.go)return; var s=tStep.s; tStep.go=Date.now(); tStep.phase="go"; tStep.left=s.sec; tStep.total=s.sec; buzzN(2);
+ (function tick(){ if(!tStep)return; if(tStep.left<=0){tEnd("done");return;} tDraw(); tStep.left--; tTimer=setTimeout(tick,1000); })();
 }
 function tEnd(result){ var st=tStep; if(!st)return; clearTimeout(tTimer); tStep=null;
-if(running==="watch")stopWatch(false); else stopRunning();
-if(st.start){ tSave(st.s,{result:result,tap_ms:st.tap,start_ms:st.start,go_ms:st.go||null,end_ms:Date.now()}); }
-if(result==="done"){buzzN(3);tNext();} else {tBtn();tCard();}
+ if(running==="watch")stopWatch(false); else stopRunning();
+ if(st.start||result==="skipped") tSave(st.s,{result:result,tap_ms:st.tap,start_ms:st.start||null,go_ms:st.go||null,end_ms:Date.now()});
+ if(result==="done"||result==="skipped"){ tset("bat.test."+tPart,st.i+1); if(result==="done")buzzN(3);
+  if(tPause){ tPause=false; tTell(false); tSetup(tPart); return; }       // asked to pause after this step: back to its set-up card
+  if(st.i+1>=tList(tPart).length){ tTell(false); tFin(); return; }
+  tStep={s:st.s,i:st.i,phase:"gap",left:5,total:5}; tDraw();             // 5 s between steps, like LightComm
+  (function gap(){ if(!tStep)return; if(tStep.left<=0){tRun();return;} tStep.left--; tDraw(); tTimer=setTimeout(gap,1000); })();
+  return; }
+ tTell(false); tHome();
 }
-(function(){ var w=window.batWatch; window.batWatch=function(ev){ if(tStep&&tStep.learning&&ev.state&&ev.state!=="learning"&&ev.state!=="turn")tGo(); w(ev); };
- setInterval(function(){ if(tStep&&tStep.learning&&Date.now()-tStep.start>20000)tGo(); },1000); })();
-$("testBtn").addEventListener("click",function(){ if(!tStep)tCard(); else $("tp").hidden=false; });
-tBtn();
+function tDraw(){ if(!tStep)return; var list=tList(tPart),s=tStep.s,i=tStep.i,ph=tStep.phase;
+ if(ph==="gap"){ s=list[i+1]; i=i+1; }
+ var st=tScreen();
+ var bars=tEl("div","tsteps");list.forEach(function(x,j){bars.appendChild(tEl("i",j<i?"on":(j===i?"now":"")));});st.appendChild(bars);
+ st.appendChild(tEl("div","tmeta","<span>Step "+(i+1)+" of "+list.length+"</span><span>"+TPARTS[tPart].title+" &middot; "+s.c+"</span>"));
+ st.appendChild(tEl("h2",null,s.t));
+ var C=2*Math.PI*90,frac=ph==="learn"?1:(tStep.total?tStep.left/tStep.total:0),off=C*(1-frac);
+ var label=ph==="get"?(tPause?"Paused":"Get ready"):ph==="learn"?"Learning":ph==="gap"?"Next step":"Recording";
+ st.appendChild(tEl("div","tring"+(ph==="go"?" go":""),'<svg viewBox="0 0 200 200" aria-hidden="true"><circle class="bg" cx="100" cy="100" r="90"></circle><circle class="fg" cx="100" cy="100" r="90" stroke-dasharray="'+C+'" stroke-dashoffset="'+off+'"></circle></svg><b>'+(ph==="learn"?"&middot;":tStep.left)+'</b><small>'+label+'</small>'));
+ st.appendChild(tEl("p",null,
+  ph==="get"?(tPause?"Paused. Nothing is recording. The step you are on is saved.":"Do this now. It starts at zero."):
+  ph==="learn"?"Keep still while it learns the room, until two buzzes.":
+  ph==="gap"?"Done. The next step starts by itself.":
+  (tPause?"Pausing after this step.":"Recording. Keep going until three buzzes.")));
+ st.appendChild(tEl("div","tgrow"));
+ var pb=tEl("button","tbig"+(tPause?" ok":""),tPause?"Continue":"Pause");
+ pb.onclick=function(){ tPause=!tPause;
+  if(tPause&&tStep&&tStep.phase==="gap"){ clearTimeout(tTimer); tStep=null; tPause=false; tTell(false); tSetup(tPart); return; }
+  tDraw(); };
+ st.appendChild(pb);
+ var row=tEl("div","trow");
+ var sk=tEl("button","tghost","Skip step");sk.onclick=function(){ if(!tStep)return; if(tStep.phase==="gap"){ tset("bat.test."+tPart,tStep.i+1); clearTimeout(tTimer); tStep.s=list[tStep.i+1]; tStep.i++; tStep.phase="go"; } tEnd("skipped"); };
+ var ex=tEl("button","tghost","Stop");ex.onclick=function(){ if(tStep&&tStep.phase==="gap"){clearTimeout(tTimer);tStep=null;tTell(false);tHome();return;} tEnd("stopped"); };
+ row.appendChild(sk);row.appendChild(ex);st.appendChild(row);
+}
+function tFin(){ var p=tPart,res=tRes(); var st=tScreen();
+ st.appendChild(tEl("div","ttag",TPARTS[p].name+" finished"));
+ st.appendChild(tEl("h2",null,"Done. Nothing else to do."));
+ st.appendChild(tEl("p",null,"Every step saved its own file on this phone. CC reads them from there."));
+ var sm=tEl("div","tsum");tList(p).forEach(function(s){var r=res[s.c]||"";sm.appendChild(tEl("div",null,"<span>"+s.c+"</span><span"+(r==="done"?"":' class="skip"')+">"+(r==="done"?"saved":r||"not run")+"</span>"));});
+ st.appendChild(sm); st.appendChild(tEl("div","tgrow"));
+ var nx=tEl("button","tbig ok",p==="A"?"On to Part B":"Back to start");nx.onclick=function(){p==="A"?tSetup("B"):tHome();};st.appendChild(nx);
+ if(p==="A"){var h=tEl("button","tghost","Not now");h.onclick=function(){tHome();};st.appendChild(h);}
+}
+(function(){ var w=window.batWatch; window.batWatch=function(ev){ if(tStep&&tStep.phase==="learn"&&ev.state&&ev.state!=="learning"&&ev.state!=="turn")tGo(); w(ev); };
+ setInterval(function(){ if(tStep&&tStep.phase==="learn"&&Date.now()-tStep.start>20000)tGo(); },1000);   // learning times out at 20 s
+ var h=window.batHive; window.batHive=function(ev){
+  if(ev.type==="msg"&&ev.t==="test"){ otherTesting=!!ev.on; if(ev.on&&running&&running!=="hs"){ if(running==="watch")stopWatch(false); else stopRunning(); }
+   $("testBtn").textContent=ev.on?"TEST · THE OTHER PHONE IS TESTING, THIS ONE STAYS QUIET":"TEST"; return; }
+  if(ev.type==="msg"&&ev.t==="watch"&&otherTesting)return;      // never start pinging while the other phone tests
+  h(ev); }; })();
+$("testBtn").addEventListener("click",function(){ if(tStep)tDraw(); else tHome(); });
 /* ================= start ================= */
 camOn();
 if(!Bat.tourSeen()) openOv("tour");

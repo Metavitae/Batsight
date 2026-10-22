@@ -106,9 +106,47 @@ ol li::before{content:counter(s);width:28px;height:28px;border-radius:50%;border
 .sweep{animation:sw 3.6s ease-in-out infinite;transform-origin:150px 168px}
 @keyframes sw{0%,100%{transform:rotate(-40deg)}50%{transform:rotate(40deg)}}
 @media (prefers-reduced-motion:reduce){.ring,.sweep{animation:none}.ring{opacity:.35}.glow{transition:none}}
-#tp{position:fixed;left:12px;right:12px;bottom:12px;margin:0 auto;z-index:4;max-height:55vh;overflow:auto;box-shadow:0 -8px 30px #050A14}
-#tp .txt{margin:0;font-size:15px;line-height:1.5;color:var(--ink);text-wrap:pretty}
-.tcode{font-size:12.5px;letter-spacing:.08em;color:var(--line)}
+/* TEST screens: Chat's drawing (Art/Working TestScreens.html, 2026-10-22), one full-screen layer over the app */
+#ts{position:fixed;inset:0;z-index:6;overflow:auto;background:var(--bg);display:flex;flex-direction:column;gap:14px;
+padding:16px max(16px,env(safe-area-inset-right,0px)) 28px max(16px,env(safe-area-inset-left,0px))}
+#ts[hidden]{display:none}
+#ts>header,#ts>.tstage{width:100%;max-width:380px;margin:0 auto}
+#ts .tstage{flex:1;background:#050C1A;border:1px solid var(--edge);border-radius:22px;min-height:520px;padding:22px 18px;display:flex;flex-direction:column;gap:16px}
+#ts h2{margin:0;font-size:26px;font-weight:600;text-wrap:balance;line-height:1.15}
+#ts p{margin:0;color:var(--muted);font-size:16px;line-height:1.45;max-width:34ch}
+#ts p.twarn{color:var(--warn)}
+#ts .tgrow{flex:1}
+#ts button{font-family:var(--font);cursor:pointer}
+#ts .tbig{width:100%;min-height:76px;border-radius:20px;border:0;background:var(--eye);color:#fff;font-size:24px;font-weight:700;letter-spacing:.04em}
+#ts .tbig.ok{background:var(--ok);color:#06231A}
+#ts .tghost{width:100%;min-height:52px;border-radius:16px;background:transparent;color:var(--ink);border:1px solid var(--edge);font-size:16px;font-weight:500}
+#ts .tpart{display:flex;gap:14px;align-items:center;text-align:left;width:100%;background:var(--panel);border:1px solid var(--edge);border-radius:18px;padding:14px 16px;color:var(--ink)}
+#ts .tpart b{display:block;font-size:18px;font-weight:600}
+#ts .tpart span{font-size:14px;color:var(--muted)}
+#ts .tpart em{font-style:normal;margin-left:auto;font-size:13px;color:var(--muted);white-space:nowrap}
+#ts .tpart.done em{color:var(--ok)}
+#ts .ttag{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--warn);font-weight:600}
+#ts .tsteps{display:flex;gap:4px}
+#ts .tsteps i{flex:1;height:5px;border-radius:3px;background:var(--edge)}
+#ts .tsteps i.on{background:var(--ok)}
+#ts .tsteps i.now{background:var(--eye)}
+#ts .tmeta{display:flex;justify-content:space-between;font-size:14px;color:var(--muted);font-variant-numeric:tabular-nums}
+#ts .tring{position:relative;width:200px;height:200px;margin:4px auto;max-width:100%}
+#ts .tring svg{width:100%;height:100%;transform:rotate(-90deg)}
+#ts .tring circle{fill:none;stroke-width:10}
+#ts .tring .bg{stroke:var(--edge)}
+#ts .tring .fg{stroke:var(--eye);stroke-linecap:round}
+#ts .tring.go .fg{stroke:var(--ok)}
+#ts .tring b{position:absolute;inset:0;display:grid;place-items:center;font-size:64px;font-weight:600;font-variant-numeric:tabular-nums}
+#ts .tring small{position:absolute;left:0;right:0;bottom:44px;text-align:center;font-size:14px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+#ts .tcard{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:10px}
+#ts .tcard ul{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px;font-size:17px;line-height:1.35}
+#ts .trow{display:flex;gap:10px}
+#ts .trow>button{flex:1}
+#ts .tsum{display:flex;flex-direction:column;gap:6px;font-size:15px;color:var(--muted)}
+#ts .tsum div{display:flex;justify-content:space-between;border-bottom:1px solid var(--edge);padding-bottom:6px}
+#ts .tsum span:last-child{color:var(--ok);font-variant-numeric:tabular-nums}
+#ts .tsum span.skip{color:var(--warn)}
 .foot a{color:var(--muted);text-decoration:underline}
 /* APP: the screen follows Android's auto-rotate in all four directions (founder 2026-10-15: hold the phone the way the
    sound works best; the map stays the same, only the view turns). Sideways, the picture shrinks to fit the height. */
@@ -203,7 +241,7 @@ ol li::before{content:counter(s);width:28px;height:28px;border-radius:50%;border
 <div class="row"><button class="b mono" id="testBtn" style="flex:1">TEST</button></div>
 <p class="fine foot">Quiet, high chirps: keep pets and sleeping people out of the room. <a href="#" id="lab">Lab</a></p>
 </main>
-<div id="tp" class="card" hidden></div>
+<div id="ts" hidden></div>
 <div id="ov" hidden><div class="card" id="card"></div></div>
 
 <script src="app.js"></script>

@@ -119,7 +119,7 @@ def report(out):
                     if near is not None and abs(runs[near] - s0) < 5:
                         rec = near.name
                     ran = f"{(j['end_ms'] - (j.get('go_ms') or j['start_ms'])) / 1000:.0f}"
-                L.append(f"| {j.get('code')} | {j.get('title')} | {j.get('result')} | {ran} | {rec} |")
+                L.append(f"| {j.get('code')} | {j.get('title') or j.get('text')} | {j.get('result')} | {ran} | {rec} |")
         # ---- Hive handshakes
         hs = sorted(d.glob("app_handshake_*_result_*.json"))
         if hs:
